@@ -8,7 +8,7 @@ import type { Role } from '../types';
 // new user can ever be given it (see the create-user Edge Function and
 // every role-selection UI). It's still included here so these exhaustive
 // checks stay honest about every literal the Role type actually contains.
-const ALL_ROLES: Role[] = ['director', 'range_officer', 'guard', 'range_office', 'tiger_cell', 'inventory_staff'];
+const ALL_ROLES: Role[] = ['director', 'range_officer', 'guard', 'range_office', 'tiger_cell', 'divisional_office', 'inventory_staff'];
 
 describe('canManageInventory', () => {
   it('director can manage inventory', () => {
@@ -20,7 +20,7 @@ describe('canManageInventory', () => {
   });
 
   it('every existing Field Operations role is denied full inventory management (an assigned guard acts only within their assigned locations, enforced by RLS, not by this check)', () => {
-    for (const role of ['range_officer', 'guard', 'range_office', 'tiger_cell'] as Role[]) {
+    for (const role of ['range_officer', 'guard', 'range_office', 'tiger_cell', 'divisional_office'] as Role[]) {
       expect(canManageInventory(role)).toBe(false);
     }
   });
@@ -43,6 +43,7 @@ describe('the deprecated inventory_staff role is not accidentally treated as a f
     expect(isFieldRole('guard')).toBe(true);
     expect(isFieldRole('range_office')).toBe(true);
     expect(isFieldRole('tiger_cell')).toBe(true);
+    expect(isFieldRole('divisional_office')).toBe(true);
   });
 
   it('isFieldRole rejects director/range_officer/inventory_staff', () => {
@@ -59,6 +60,7 @@ describe('existing permission helpers are unaffected by Inventory access', () =>
     expect(canManageTasks('guard')).toBe(false);
     expect(canManageTasks('range_office')).toBe(false);
     expect(canManageTasks('tiger_cell')).toBe(false);
+    expect(canManageTasks('divisional_office')).toBe(false);
     expect(canManageTasks('inventory_staff')).toBe(false);
   });
 
@@ -70,7 +72,7 @@ describe('existing permission helpers are unaffected by Inventory access', () =>
   });
 
   it('every known role is covered by exactly one of canManageInventory/canManageTasks/canManageIncidents assertions above (no role silently falls through untested)', () => {
-    expect(ALL_ROLES).toHaveLength(6);
+    expect(ALL_ROLES).toHaveLength(7);
   });
 });
 
@@ -84,6 +86,7 @@ describe('canManageTaskGroups', () => {
     expect(canManageTaskGroups('guard')).toBe(false);
     expect(canManageTaskGroups('range_office')).toBe(false);
     expect(canManageTaskGroups('tiger_cell')).toBe(false);
+    expect(canManageTaskGroups('divisional_office')).toBe(false);
     expect(canManageTaskGroups('inventory_staff')).toBe(false);
   });
 

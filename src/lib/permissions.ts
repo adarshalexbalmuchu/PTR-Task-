@@ -35,7 +35,7 @@ export function canManageInventory(role: Role | undefined): boolean {
     member/coordinator can post to a given conversation is enforced by RLS
     (can_officer_manage_group / is_group_member / can_post_to_conversation
     in supabase/schema.sql), not mirrored here. Guards/range_office/
-    tiger_cell only ever see groups they belong to. */
+    tiger_cell/divisional_office only ever see groups they belong to. */
 export function canManageTaskGroups(role: Role | undefined): boolean {
   return role === 'director' || role === 'range_officer';
 }

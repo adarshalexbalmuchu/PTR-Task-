@@ -22,11 +22,12 @@ export type Role = UserRole;
 // FIELD_ROLES' exclusion list only because the Postgres enum value can't
 // be safely dropped while live and no profile currently holds it.
 
-// range_office and tiger_cell hold the same access level as guard (field
-// staff scoped to their own assigned tasks/incidents) — just a different
-// personnel label. Anywhere the app branches on "is this a field-level
-// user", check this instead of `role === 'guard'` directly.
-export const FIELD_ROLES: Role[] = ['guard', 'range_office', 'tiger_cell'];
+// range_office, tiger_cell, and divisional_office hold the same access
+// level as guard (field staff scoped to their own assigned tasks/
+// incidents) — just a different personnel label. Anywhere the app
+// branches on "is this a field-level user", check this instead of
+// `role === 'guard'` directly.
+export const FIELD_ROLES: Role[] = ['guard', 'range_office', 'tiger_cell', 'divisional_office'];
 export function isFieldRole(role: Role | undefined): boolean {
   return role !== undefined && FIELD_ROLES.includes(role);
 }

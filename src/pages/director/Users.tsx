@@ -20,6 +20,7 @@ const ROLE_LABELS: Record<Role, string> = {
   guard: 'Guard / Field Staff',
   range_office: 'Range Office',
   tiger_cell: 'Tiger Cell',
+  divisional_office: 'Divisional Office',
   inventory_staff: 'Inventory Staff (deprecated)',
 };
 
@@ -31,17 +32,20 @@ const ROLE_COLORS: Record<Role, string> = {
   guard: 'bg-white text-ptr-brown-light border border-ptr-cream-dark',
   range_office: 'bg-white text-ptr-brown-light border border-ptr-cream-dark',
   tiger_cell: 'bg-white text-ptr-brown-light border border-ptr-cream-dark',
+  divisional_office: 'bg-white text-ptr-brown-light border border-ptr-cream-dark',
   inventory_staff: 'bg-white text-ptr-brown-light border border-ptr-cream-dark',
 };
 
 // Director works reserve-wide and Tiger Cell staff (research/tech roles that
 // span ranges) aren't posted to one range either — both skip the field.
+// Divisional Office, like Range Office, is posted to one specific range.
 const ROLE_HAS_NO_RANGE: Record<Role, boolean> = {
   director: true,
   range_officer: false,
   guard: false,
   range_office: false,
   tiger_cell: true,
+  divisional_office: false,
   inventory_staff: true,
 };
 
@@ -185,6 +189,7 @@ function UserFormModal({
                 <option value="guard">Guard / Field Staff</option>
                 <option value="range_office">Range Office</option>
                 <option value="tiger_cell">Tiger Cell</option>
+                <option value="divisional_office">Divisional Office</option>
               </Select>
             </div>
             <div>
@@ -272,6 +277,7 @@ export default function DirectorUsers() {
     { value: 'guard', label: 'Guard / field staff' },
     { value: 'range_office', label: 'Range office' },
     { value: 'tiger_cell', label: 'Tiger cell' },
+    { value: 'divisional_office', label: 'Divisional office' },
   ];
 
   return (

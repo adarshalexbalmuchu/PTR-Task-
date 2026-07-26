@@ -22,6 +22,7 @@ exception when duplicate_object then null; end $$;
 -- pick them up (the do-block above only fires create on a fresh database).
 alter type user_role add value if not exists 'range_office';
 alter type user_role add value if not exists 'tiger_cell';
+alter type user_role add value if not exists 'divisional_office';
 -- DEPRECATED (2026-07): Inventory access is no longer a separate role.
 -- It's now a capability any existing guard can be granted via an active
 -- inventory_location_staff assignment (see get_my_inventory_location_ids()
@@ -483,14 +484,15 @@ set search_path = '' as $$
   select role from public.profiles where id = auth.uid();
 $$;
 
--- range_office and tiger_cell hold the same access level as guard (field
--- staff scoped to their own assigned tasks/incidents) — just a different
--- personnel label. Every RLS policy and trigger that used to check
--- `get_my_role() = 'guard'` calls this instead, so the three stay in sync.
+-- range_office, tiger_cell, and divisional_office hold the same access
+-- level as guard (field staff scoped to their own assigned tasks/
+-- incidents) — just a different personnel label. Every RLS policy and
+-- trigger that used to check `get_my_role() = 'guard'` calls this instead,
+-- so the four stay in sync.
 create or replace function is_field_role()
 returns boolean language sql security invoker stable
 set search_path = '' as $$
-  select (select public.get_my_role()) in ('guard', 'range_office', 'tiger_cell');
+  select (select public.get_my_role()) in ('guard', 'range_office', 'tiger_cell', 'divisional_office');
 $$;
 
 create or replace function get_my_range_id()
@@ -1200,9 +1202,9 @@ create policy "daily_reports_read" on daily_reports
 -- rule (see internal records for who/why). If that profile is ever
 -- deleted and recreated, this id must be updated to match. range_officer
 -- no longer gets range-wide incident visibility (that moved to
--- tiger_cell) — range_officer, guard, range_office, and the excluded
--- profile can only read/insert incidents THEY personally reported, never
--- update/delete.
+-- tiger_cell) — range_officer, guard, range_office, divisional_office, and
+-- the excluded profile can only read/insert incidents THEY personally
+-- reported, never update/delete.
 create policy "incidents_director" on incidents
   for all using ((select get_my_role()) = 'director');
 

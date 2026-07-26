@@ -1,6 +1,6 @@
 export type Json = string | number | boolean | null | { [key: string]: Json | undefined } | Json[];
 
-export type UserRole = 'director' | 'range_officer' | 'guard' | 'range_office' | 'tiger_cell' | 'inventory_staff';
+export type UserRole = 'director' | 'range_officer' | 'guard' | 'range_office' | 'tiger_cell' | 'inventory_staff' | 'divisional_office';
 export type TaskStatus = 'NotStarted' | 'InProgress' | 'Completed' | 'Archived';
 export type TaskPriority = 'Critical' | 'High' | 'Medium' | 'Low';
 export type TaskCategory = 'Patrol' | 'Camera Trap' | 'Survey' | 'Maintenance' | 'Admin' | 'Other';

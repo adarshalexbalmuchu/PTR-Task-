@@ -33,14 +33,14 @@ interface CreateUserPayload {
   email: string;
   password: string;
   name: string;
-  role: 'director' | 'range_officer' | 'guard' | 'range_office' | 'tiger_cell';
+  role: 'director' | 'range_officer' | 'guard' | 'range_office' | 'tiger_cell' | 'divisional_office';
   phone?: string;
   avatarInitials: string;
   designation: string;
   rangeId?: string;
 }
 
-const VALID_ROLES = ['director', 'range_officer', 'guard', 'range_office', 'tiger_cell'] as const;
+const VALID_ROLES = ['director', 'range_officer', 'guard', 'range_office', 'tiger_cell', 'divisional_office'] as const;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 // Deliberately simple: enough to reject garbage, not trying to fully
 // implement RFC 5322 (Supabase Auth validates again on its side).
