@@ -8,6 +8,7 @@ import { useInventoryPurchases } from '../../hooks/useInventoryPurchases';
 import { useInventoryBatches } from '../../hooks/useInventoryBatches';
 import { useSyncStatus } from '../../hooks/useSyncStatus';
 import { canManageInventory } from '../../lib/permissions';
+import { inventoryBase } from '../../lib/inventoryBase';
 import { daysUntilExpiry } from '../../utils/expiry';
 
 function greeting(): string {
@@ -37,11 +38,7 @@ export default function InventoryHome() {
   const navigate = useNavigate();
   const currentUser = useStore((s) => s.currentUser);
   const isDirector = canManageInventory(currentUser?.role);
-  // No route is ever mounted at bare '/inventory' — only /director/inventory
-  // and /guard/inventory exist (App.tsx). The wrong prefix here silently
-  // sent every non-director inventory link to the app's catch-all route,
-  // which bounces to the user's home page instead of the intended page.
-  const base = isDirector ? '/director/inventory' : '/guard/inventory';
+  const base = inventoryBase(currentUser?.role);
   const { stock } = useInventoryStock();
   const { requests } = useInventoryRequests();
   const { locations } = useInventoryLocations();
@@ -74,12 +71,37 @@ export default function InventoryHome() {
         <Metric label="Expiring within 30d" value={expiringSoon.length} tone={expiringSoon.length > 0 ? 'amber' : 'default'} onClick={() => navigate(`${base}/reports`)} />
       </div>
 
-      <div className="px-4 mb-5">
+      <div className="px-4 mb-5 space-y-2">
         <button onClick={() => navigate(`${base}/reports`)} className="w-full flex items-center justify-between gap-3 bg-white border border-n-30 rounded-lg px-4 py-3 active:bg-n-10">
           <span className="flex items-center gap-2 text-[15px] font-medium text-n-100"><FileBarChart className="w-4 h-4 text-n-70" />Inventory reports</span>
           <ChevronRight className="w-4 h-4 text-n-50" />
         </button>
+        <button onClick={() => navigate(`${base}/transactions`)} className="w-full flex items-center justify-between gap-3 bg-white border border-n-30 rounded-lg px-4 py-3 active:bg-n-10">
+          <span className="text-[15px] font-medium text-n-100">Transactions</span>
+          <ChevronRight className="w-4 h-4 text-n-50" />
+        </button>
       </div>
+
+      {/* Catalog & staffing — director-only management pages, otherwise
+          unreachable from mobile (no other in-app link to them at all). */}
+      {isDirector && (
+        <div className="mb-5">
+          <SectionLabel>Catalog & staffing</SectionLabel>
+          <div className="bg-white divide-y divide-n-20">
+            {[
+              { label: 'Items', to: `${base}/items` },
+              { label: 'Categories & units', to: `${base}/categories` },
+              { label: 'Locations', to: `${base}/locations` },
+              { label: 'Managers', to: `${base}/managers` },
+            ].map((l) => (
+              <button key={l.to} onClick={() => navigate(l.to)} className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left active:bg-n-10">
+                <span className="text-[15px] font-medium text-n-100">{l.label}</span>
+                <ChevronRight className="w-4 h-4 text-n-50 flex-shrink-0" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {isDirector && pendingApproval.length > 0 && (
         <div className="mb-5">

@@ -7,11 +7,14 @@ import { useInventoryLocations } from '../../hooks/useInventoryLocations';
 import { useInventoryItems } from '../../hooks/useInventoryCatalog';
 import { useSelectedInventoryLocation } from '../../hooks/useInventoryAccess';
 import { canManageInventory } from '../../lib/permissions';
+import { inventoryBase } from '../../lib/inventoryBase';
 import { quantityInputStep, validateQuantity } from '../../lib/inventoryQuantity';
 import Select from '../../components/Select';
 import EmptyState from '../../components/EmptyState';
-import { CommandBar } from '../../components/layout/Slots';
+import { CommandBar, ContextPanel } from '../../components/layout/Slots';
 import { Page, PageHeading } from '../../components/layout/Page';
+import InventorySubNav from '../../components/inventory/InventorySubNav';
+import ItemPicker from '../../components/inventory/ItemPicker';
 import { getErrorMessage } from '../../lib/errors';
 import { formatDate } from '../../utils/formatters';
 import type { InventoryRequestStatus, TaskPriority } from '../../types';
@@ -31,6 +34,17 @@ function NewRequestForm({ onClose }: { onClose: () => void }) {
   const { locations } = useInventoryLocations();
   const { items: allItems } = useInventoryItems();
   const items = allItems.filter((i) => i.active);
+  // A real catalog item (seeded alongside the starter catalog), not a
+  // client-only sentinel — inventory_request_items.item_id is a required
+  // FK, so a free-text "Other" line still needs a real row to point at.
+  // Picking it reveals a text field; what's typed there is carried through
+  // as that line's `notes` (see create_inventory_request's redeploy
+  // comment in schema.sql).
+  const otherItem = items.find((it) => it.name === 'Other / not listed');
+  // Pinned first (not left to sort alphabetically into the middle of the
+  // list) so it's the thing you see without typing anything, not something
+  // you have to already know to search for.
+  const pickerItems = otherItem ? [otherItem, ...items.filter((it) => it.id !== otherItem.id)] : items;
   const { createRequest, submitRequest } = useInventoryRequests();
   // A guard covering more than one location defaults to whichever one
   // they're currently switched to on the Stock page (useSelectedInventoryLocation),
@@ -44,14 +58,14 @@ function NewRequestForm({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (selectedLocationId && !locationId) setLocationId(selectedLocationId);
   }, [selectedLocationId, locationId]);
-  const [lines, setLines] = useState<{ itemId: string; qty: string }[]>([{ itemId: '', qty: '1' }]);
+  const [lines, setLines] = useState<{ itemId: string; qty: string; note: string }[]>([{ itemId: '', qty: '1', note: '' }]);
   const [requiredByDate, setRequiredByDate] = useState('');
   const [priority, setPriority] = useState<TaskPriority>('Medium');
   const [reason, setReason] = useState('');
 
-  const addLine = () => setLines((ls) => [...ls, { itemId: '', qty: '1' }]);
+  const addLine = () => setLines((ls) => [...ls, { itemId: '', qty: '1', note: '' }]);
   const removeLine = (i: number) => setLines((ls) => ls.filter((_, idx) => idx !== i));
-  const setLine = (i: number, patch: Partial<{ itemId: string; qty: string }>) =>
+  const setLine = (i: number, patch: Partial<{ itemId: string; qty: string; note: string }>) =>
     setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
 
   const lineError = (line: { itemId: string; qty: string }): string | null => {
@@ -59,17 +73,25 @@ function NewRequestForm({ onClose }: { onClose: () => void }) {
     const allowsFractional = items.find((it) => it.id === line.itemId)?.allowsFractional;
     return validateQuantity(Number(line.qty), allowsFractional);
   };
-  const validLines = lines.filter((l) => l.itemId && !lineError(l));
-  const hasInvalidLine = lines.some((l) => l.itemId && lineError(l));
+  const isOtherLine = (line: { itemId: string }) => !!otherItem && line.itemId === otherItem.id;
+  const validLines = lines.filter((l) => l.itemId && !lineError(l) && (!isOtherLine(l) || l.note.trim()));
+  const hasInvalidLine = lines.some((l) => l.itemId && (lineError(l) || (isOtherLine(l) && !l.note.trim())));
 
   // Same item picked on more than one line is deliberately merged into a
   // single request line (summed quantity) rather than rejected or sent as
   // two rows, which would otherwise trip the DB's one-row-per-item
-  // constraint on inventory_request_items.
+  // constraint on inventory_request_items. Two "Other" lines merge their
+  // free-text notes too, instead of one silently overwriting the other.
   const mergedItems = Object.values(
-    validLines.reduce<Record<string, { itemId: string; requestedQty: number }>>((acc, l) => {
+    validLines.reduce<Record<string, { itemId: string; requestedQty: number; notes: string }>>((acc, l) => {
       const qty = Number(l.qty);
-      acc[l.itemId] = { itemId: l.itemId, requestedQty: (acc[l.itemId]?.requestedQty ?? 0) + qty };
+      const existing = acc[l.itemId];
+      const note = l.note.trim();
+      acc[l.itemId] = {
+        itemId: l.itemId,
+        requestedQty: (existing?.requestedQty ?? 0) + qty,
+        notes: existing?.notes ? (note ? `${existing.notes}; ${note}` : existing.notes) : note,
+      };
       return acc;
     }, {}),
   );
@@ -105,13 +127,11 @@ function NewRequestForm({ onClose }: { onClose: () => void }) {
         {lines.map((line, i) => {
           const allowsFractional = items.find((it) => it.id === line.itemId)?.allowsFractional;
           const error = lineError(line);
+          const showOtherField = isOtherLine(line);
           return (
             <div key={i}>
               <div className="flex gap-2 items-center">
-                <Select value={line.itemId} onChange={(e) => setLine(i, { itemId: e.target.value })} className="input-field select-field flex-1">
-                  <option value="">Select item</option>
-                  {items.map((it) => <option key={it.id} value={it.id}>{it.name}</option>)}
-                </Select>
+                <ItemPicker items={pickerItems} value={line.itemId} onChange={(id) => setLine(i, { itemId: id })} />
                 <input
                   type="number" min="0" step={quantityInputStep(allowsFractional)} value={line.qty}
                   onChange={(e) => setLine(i, { qty: e.target.value })}
@@ -121,6 +141,14 @@ function NewRequestForm({ onClose }: { onClose: () => void }) {
                   <Trash2 className="w-4 h-4" />
                 </button>
               </div>
+              {showOtherField && (
+                <input
+                  value={line.note}
+                  onChange={(e) => setLine(i, { note: e.target.value })}
+                  className="input-field mt-1.5"
+                  placeholder="What do you need? Be specific — e.g. Mosquito net, 2 units"
+                />
+              )}
               {error && <p className="text-xs text-signal-red mt-1">{error}</p>}
             </div>
           );
@@ -168,12 +196,12 @@ export default function InventoryRequestsPage() {
   const isDirector = canManageInventory(currentUser?.role);
   const { requests, isLoading } = useInventoryRequests();
   const [formOpen, setFormOpen] = useState(false);
-  // No route is ever mounted at bare '/inventory' — only /director/inventory
-  // and /guard/inventory exist (App.tsx).
-  const base = isDirector ? '/director/inventory' : '/guard/inventory';
+  const base = inventoryBase(currentUser?.role);
 
   return (
-    <Page className="space-y-4">
+    <>
+      <ContextPanel><InventorySubNav /></ContextPanel>
+      <Page className="space-y-4">
       {!isDirector && (
         <CommandBar>
           <button onClick={() => setFormOpen((o) => !o)} className="btn-primary"><Plus className="w-4 h-4" />New request</button>
@@ -212,6 +240,7 @@ export default function InventoryRequestsPage() {
           ))}
         </div>
       )}
-    </Page>
+      </Page>
+    </>
   );
 }

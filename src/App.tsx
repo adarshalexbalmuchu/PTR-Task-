@@ -235,6 +235,23 @@ export default function App() {
               <Route path="groups" element={<TaskGroupsList />} />
               <Route path="groups/:id" element={<TaskGroupDetail />} />
               <Route path="groups/:id/occurrences/:occId" element={<OccurrenceDetail />} />
+
+              {/* Inventory is an additional capability, not a separate
+                  shell — same as the guard block below. The mobile "More"
+                  sheet already links here for any role with access
+                  (MobileShell.tsx); this was the missing route half of
+                  that link for range officers specifically. Director-only
+                  catalog pages (items/categories/locations/managers) are
+                  deliberately not included, matching the guard block. */}
+              <Route path="inventory" element={<ProtectedInventoryAccess><Outlet /></ProtectedInventoryAccess>}>
+                <Route index element={<InventoryDashboard />} />
+                <Route path="stock" element={<InventoryStock />} />
+                <Route path="requests" element={<InventoryRequests />} />
+                <Route path="requests/:id" element={<InventoryRequestDetail />} />
+                <Route path="purchases" element={<InventoryPurchases />} />
+                <Route path="transactions" element={<InventoryTransactions />} />
+                <Route path="reports" element={<InventoryReports />} />
+              </Route>
             </Route>
 
             {/* Guard — Inventory is an additional capability for guards with

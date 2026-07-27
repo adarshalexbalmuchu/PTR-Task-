@@ -3,8 +3,9 @@ import { Plus } from 'lucide-react';
 import { useInventoryItems, useInventoryCategories, useInventoryUnits } from '../../hooks/useInventoryCatalog';
 import Select from '../../components/Select';
 import EmptyState from '../../components/EmptyState';
-import { CommandBar } from '../../components/layout/Slots';
+import { CommandBar, ContextPanel } from '../../components/layout/Slots';
 import { Page, PageHeading } from '../../components/layout/Page';
+import InventorySubNav from '../../components/inventory/InventorySubNav';
 import { getErrorMessage } from '../../lib/errors';
 import { quantityInputStep, isIntegerOnlyUnit } from '../../lib/inventoryQuantity';
 import type { InventoryItemKind } from '../../types';
@@ -46,7 +47,9 @@ export default function InventoryItems() {
   };
 
   return (
-    <Page className="space-y-6">
+    <>
+      <ContextPanel><InventorySubNav /></ContextPanel>
+      <Page className="space-y-6">
       <CommandBar>
         <button onClick={() => setFormOpen((o) => !o)} className="btn-primary"><Plus className="w-4 h-4" />New item</button>
       </CommandBar>
@@ -120,6 +123,7 @@ export default function InventoryItems() {
           ))}
         </div>
       )}
-    </Page>
+      </Page>
+    </>
   );
 }

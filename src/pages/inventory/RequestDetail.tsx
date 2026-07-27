@@ -5,9 +5,11 @@ import useStore from '../../store/useStore';
 import { useInventoryRequests } from '../../hooks/useInventoryRequests';
 import { useInventoryStock } from '../../hooks/useInventoryStock';
 import { canManageInventory } from '../../lib/permissions';
+import { inventoryBase } from '../../lib/inventoryBase';
 import { quantityInputStep, validateQuantity } from '../../lib/inventoryQuantity';
-import { CommandBar } from '../../components/layout/Slots';
+import { CommandBar, ContextPanel } from '../../components/layout/Slots';
 import { Page, PageHeading } from '../../components/layout/Page';
+import InventorySubNav from '../../components/inventory/InventorySubNav';
 import { getErrorMessage } from '../../lib/errors';
 import { formatDate, formatDateTime } from '../../utils/formatters';
 import type { InventoryRequestStatus } from '../../types';
@@ -28,9 +30,7 @@ export default function InventoryRequestDetail() {
   const navigate = useNavigate();
   const currentUser = useStore((s) => s.currentUser);
   const isDirector = canManageInventory(currentUser?.role);
-  // No route is ever mounted at bare '/inventory' — only /director/inventory
-  // and /guard/inventory exist (App.tsx).
-  const base = isDirector ? '/director/inventory' : '/guard/inventory';
+  const base = inventoryBase(currentUser?.role);
   const { requests, isLoading, cancelRequest, approveRequest, rejectRequest, issueStock } = useInventoryRequests();
   const { stock } = useInventoryStock();
   const request = requests.find((r) => r.id === id);
@@ -44,8 +44,8 @@ export default function InventoryRequestDetail() {
   // only once the action actually succeeds.
   const issueKeys = useRef<Record<string, string>>({});
 
-  if (isLoading) return <Page><div className="skeleton h-40" /></Page>;
-  if (!request) return <Page><PageHeading title="Request not found" /></Page>;
+  if (isLoading) return <><ContextPanel><InventorySubNav /></ContextPanel><Page><div className="skeleton h-40" /></Page></>;
+  if (!request) return <><ContextPanel><InventorySubNav /></ContextPanel><Page><PageHeading title="Request not found" /></Page></>;
 
   const canCancel = !isDirector && (request.status === 'Draft' || request.status === 'Submitted');
   const canApprove = isDirector && request.status === 'Submitted';
@@ -113,7 +113,9 @@ export default function InventoryRequestDetail() {
   };
 
   return (
-    <Page className="space-y-4">
+    <>
+      <ContextPanel><InventorySubNav /></ContextPanel>
+      <Page className="space-y-4">
       <CommandBar>
         <button onClick={() => navigate(`${base}/requests`)} className="btn-subtle"><ArrowLeft className="w-4 h-4" />Back</button>
       </CommandBar>
@@ -212,6 +214,7 @@ export default function InventoryRequestDetail() {
       {canCancel && (
         <button onClick={() => void doCancel()} disabled={cancelRequest.isPending} className="btn-secondary">Cancel request</button>
       )}
-    </Page>
+      </Page>
+    </>
   );
 }

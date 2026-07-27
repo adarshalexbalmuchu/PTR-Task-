@@ -1,18 +1,23 @@
 import { useInventoryTransactions } from '../../hooks/useInventoryTransactions';
 import EmptyState from '../../components/EmptyState';
 import { Page, PageHeading } from '../../components/layout/Page';
+import { ContextPanel } from '../../components/layout/Slots';
+import InventorySubNav from '../../components/inventory/InventorySubNav';
 import { formatDateTime } from '../../utils/formatters';
 
 const TYPE_LABEL: Record<string, string> = {
   opening_balance: 'Opening balance',
   issued: 'Issued',
+  purchase_receipt: 'Purchase',
 };
 
 export default function InventoryTransactionsPage() {
   const { transactions, isLoading } = useInventoryTransactions();
 
   return (
-    <Page className="space-y-4">
+    <>
+      <ContextPanel><InventorySubNav /></ContextPanel>
+      <Page className="space-y-4">
       <PageHeading title="Transactions" meta="Every stock movement, immutable once posted." />
 
       {isLoading ? (
@@ -36,6 +41,7 @@ export default function InventoryTransactionsPage() {
           ))}
         </div>
       )}
-    </Page>
+      </Page>
+    </>
   );
 }

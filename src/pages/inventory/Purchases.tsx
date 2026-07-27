@@ -7,8 +7,9 @@ import { useSelectedInventoryLocation } from '../../hooks/useInventoryAccess';
 import { quantityInputStep, validateQuantity } from '../../lib/inventoryQuantity';
 import Select from '../../components/Select';
 import EmptyState from '../../components/EmptyState';
-import { CommandBar } from '../../components/layout/Slots';
+import { CommandBar, ContextPanel } from '../../components/layout/Slots';
 import { Page, PageHeading } from '../../components/layout/Page';
+import InventorySubNav from '../../components/inventory/InventorySubNav';
 import { getErrorMessage } from '../../lib/errors';
 import { formatDate } from '../../utils/formatters';
 
@@ -173,7 +174,9 @@ export default function InventoryPurchasesPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   return (
-    <Page className="space-y-4">
+    <>
+      <ContextPanel><InventorySubNav /></ContextPanel>
+      <Page className="space-y-4">
       <CommandBar>
         <button onClick={() => setFormOpen((o) => !o)} className="btn-primary"><Plus className="w-4 h-4" />Record purchase</button>
       </CommandBar>
@@ -230,6 +233,7 @@ export default function InventoryPurchasesPage() {
           })}
         </div>
       )}
-    </Page>
+      </Page>
+    </>
   );
 }

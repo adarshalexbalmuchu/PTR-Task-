@@ -68,7 +68,7 @@ export function useInventoryRequests() {
   const createRequest = useMutation({
     mutationFn: async (input: {
       requestingLocationId: string;
-      items: { itemId: string; requestedQty: number }[];
+      items: { itemId: string; requestedQty: number; notes?: string }[];
       requiredByDate?: string;
       priority?: TaskPriority;
       reason?: string;

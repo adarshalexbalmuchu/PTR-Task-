@@ -8,8 +8,11 @@ import { useInventoryLocations } from '../../hooks/useInventoryLocations';
 import { useInventoryPurchases } from '../../hooks/useInventoryPurchases';
 import { useInventoryBatches } from '../../hooks/useInventoryBatches';
 import { canManageInventory } from '../../lib/permissions';
+import { inventoryBase } from '../../lib/inventoryBase';
 import { daysUntilExpiry } from '../../utils/expiry';
 import { Page, PageHeading, SectionTitle } from '../../components/layout/Page';
+import { ContextPanel } from '../../components/layout/Slots';
+import InventorySubNav from '../../components/inventory/InventorySubNav';
 import InventoryHome from '../mobile/InventoryHome';
 
 function Metric({ label, value, tone = 'default', onClick }: {
@@ -37,16 +40,16 @@ export default function InventoryDashboard() {
 
   if (isMobile) return <InventoryHome />;
 
-  // No route is ever mounted at bare '/inventory' — only /director/inventory
-  // and /guard/inventory exist (App.tsx).
-  const base = isDirector ? '/director/inventory' : '/guard/inventory';
+  const base = inventoryBase(currentUser?.role);
   const lowStock = stock.filter((s) => s.minStock !== undefined && s.availableQty <= s.minStock);
   const pendingApproval = requests.filter((r) => r.status === 'Submitted');
   const myPending = requests.filter((r) => r.status === 'Draft' || r.status === 'Submitted' || r.status === 'Approved' || r.status === 'PartiallyApproved');
   const expiringSoon = batches.filter((b) => b.remainingQty > 0 && b.expiryDate && daysUntilExpiry(b.expiryDate) <= 30);
 
   return (
-    <Page className="space-y-6">
+    <>
+      <ContextPanel><InventorySubNav /></ContextPanel>
+      <Page className="space-y-6">
       <PageHeading title={isDirector ? 'Inventory dashboard' : 'My inventory'} meta={isDirector ? `${locations.length} location${locations.length === 1 ? '' : 's'}` : undefined} />
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -97,6 +100,7 @@ export default function InventoryDashboard() {
           </div>
         </section>
       )}
-    </Page>
+      </Page>
+    </>
   );
 }

@@ -17,14 +17,14 @@ const clientWithData = supabase as unknown as {
 
 export async function createInventoryRequest(args: {
   requestingLocationId: string;
-  items: { itemId: string; requestedQty: number }[];
+  items: { itemId: string; requestedQty: number; notes?: string }[];
   requiredByDate?: string;
   priority?: string;
   reason?: string;
 }): Promise<string> {
   const { data, error } = await clientWithData.rpc('create_inventory_request', {
     p_requesting_location_id: args.requestingLocationId,
-    p_items: args.items.map((i) => ({ item_id: i.itemId, requested_qty: i.requestedQty })),
+    p_items: args.items.map((i) => ({ item_id: i.itemId, requested_qty: i.requestedQty, notes: i.notes ?? '' })),
     p_required_by_date: args.requiredByDate ?? null,
     p_priority: args.priority ?? 'Medium',
     p_reason: args.reason ?? '',

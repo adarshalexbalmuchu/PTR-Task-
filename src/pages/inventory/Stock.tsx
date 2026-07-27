@@ -9,8 +9,9 @@ import { canManageInventory } from '../../lib/permissions';
 import { quantityInputStep, validateQuantity } from '../../lib/inventoryQuantity';
 import Select from '../../components/Select';
 import EmptyState from '../../components/EmptyState';
-import { CommandBar } from '../../components/layout/Slots';
+import { CommandBar, ContextPanel } from '../../components/layout/Slots';
 import { Page, PageHeading } from '../../components/layout/Page';
+import InventorySubNav from '../../components/inventory/InventorySubNav';
 import { getErrorMessage } from '../../lib/errors';
 
 function OpeningBalanceForm({ onClose }: { onClose: () => void }) {
@@ -119,7 +120,9 @@ export default function InventoryStockPage() {
   });
 
   return (
-    <Page className="space-y-4">
+    <>
+      <ContextPanel><InventorySubNav /></ContextPanel>
+      <Page className="space-y-4">
       {isDirector && (
         <CommandBar>
           <button onClick={() => setFormOpen((o) => !o)} className="btn-primary"><Plus className="w-4 h-4" />Post opening balance</button>
@@ -192,6 +195,7 @@ export default function InventoryStockPage() {
           )}
         </>
       )}
-    </Page>
+      </Page>
+    </>
   );
 }

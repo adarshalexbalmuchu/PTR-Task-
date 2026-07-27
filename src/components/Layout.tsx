@@ -50,13 +50,18 @@ function directorSections(): Section[] {
   ];
 }
 
-function officerSections(): Section[] {
+// Inventory is capability-based (an active inventory_location_staff
+// assignment), not role-based, same as the guard shell's bottom-nav entry
+// — so unlike the rest of this static list, it's only included when the
+// signed-in officer actually has access.
+function officerSections(hasInventoryAccess: boolean): Section[] {
   return [
     { key: 'dashboard', to: '/officer', label: 'Dashboard', icon: <LayoutDashboard className={iconCls} /> },
     { key: 'tasks', to: '/officer/tasks', label: 'Task registry', icon: <ClipboardList className={iconCls} /> },
     { key: 'incidents', to: '/officer/incidents', label: 'Incident reports', icon: <AlertTriangle className={iconCls} /> },
     { key: 'map', to: '/officer/map', label: 'Range map', icon: <MapIcon className={iconCls} /> },
     { key: 'groups', to: '/officer/groups', label: 'Task Groups', icon: <UsersRound className={iconCls} /> },
+    ...(hasInventoryAccess ? [{ key: 'inventory', to: '/officer/inventory', label: 'Inventory', icon: <Boxes className={iconCls} /> }] : []),
     { key: 'audit', to: '/officer/audit', label: 'System audit', icon: <History className={iconCls} /> },
   ];
 }
@@ -518,6 +523,11 @@ function roleBase(role: string | undefined): string {
 export default function Layout() {
   const currentUser = useStore((s) => s.currentUser);
   const isMobile = useIsMobile();
+  // Cheap to call unconditionally — the query is disabled for a director
+  // (useMyInventoryAccess), so this is a no-op fetch for every role that
+  // doesn't need it, matching the same hook GuardLayout/MobileShell already
+  // call for their own Inventory nav entries.
+  const { hasInventoryAccess } = useMyInventoryAccess();
 
   // Below 768px every Field Ops role shares the same bottom-nav shell
   // (Home / Tasks / Incidents / Map / More). Inventory is not a separate
@@ -539,7 +549,7 @@ export default function Layout() {
   if (currentUser?.role === 'range_officer') {
     return (
       <SlotProvider>
-        <AdminLayout sections={officerSections()} base="/officer" />
+        <AdminLayout sections={officerSections(hasInventoryAccess)} base="/officer" />
       </SlotProvider>
     );
   }

@@ -5,6 +5,8 @@ import { useInventoryLocations, useInventoryLocationStaff } from '../../hooks/us
 import Select from '../../components/Select';
 import EmptyState from '../../components/EmptyState';
 import { Page, PageHeading } from '../../components/layout/Page';
+import { ContextPanel } from '../../components/layout/Slots';
+import InventorySubNav from '../../components/inventory/InventorySubNav';
 import { getErrorMessage } from '../../lib/errors';
 
 // Assigns Inventory access to existing guards — there is no separate
@@ -33,7 +35,9 @@ export default function InventoryManagers() {
   };
 
   return (
-    <Page className="space-y-6">
+    <>
+      <ContextPanel><InventorySubNav /></ContextPanel>
+      <Page className="space-y-6">
       <PageHeading
         title="Inventory managers"
         meta="Give an existing guard Inventory access to one or more locations. Create the guard account itself from Personnel first."
@@ -84,6 +88,7 @@ export default function InventoryManagers() {
           ))}
         </div>
       )}
-    </Page>
+      </Page>
+    </>
   );
 }

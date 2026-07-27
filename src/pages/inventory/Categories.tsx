@@ -3,6 +3,8 @@ import { Plus } from 'lucide-react';
 import { useInventoryCategories, useInventoryUnits } from '../../hooks/useInventoryCatalog';
 import EmptyState from '../../components/EmptyState';
 import { Page, PageHeading, SectionTitle } from '../../components/layout/Page';
+import { ContextPanel } from '../../components/layout/Slots';
+import InventorySubNav from '../../components/inventory/InventorySubNav';
 import { getErrorMessage } from '../../lib/errors';
 
 export default function InventoryCategories() {
@@ -34,7 +36,9 @@ export default function InventoryCategories() {
   };
 
   return (
-    <Page className="space-y-6">
+    <>
+      <ContextPanel><InventorySubNav /></ContextPanel>
+      <Page className="space-y-6">
       <PageHeading title="Categories & units" meta="Directors can add new ones any time — nothing here needs a schema change." />
 
       <section>
@@ -95,6 +99,7 @@ export default function InventoryCategories() {
           </div>
         )}
       </section>
-    </Page>
+      </Page>
+    </>
   );
 }

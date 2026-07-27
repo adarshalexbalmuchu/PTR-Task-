@@ -10,6 +10,8 @@ import Select from '../../components/Select';
 import EmptyState from '../../components/EmptyState';
 import Tabs from '../../components/ui/Tabs';
 import { Page, PageHeading } from '../../components/layout/Page';
+import { ContextPanel } from '../../components/layout/Slots';
+import InventorySubNav from '../../components/inventory/InventorySubNav';
 import { formatDate } from '../../utils/formatters';
 import { daysUntilExpiry, expiryUrgency, type ExpiryUrgency } from '../../utils/expiry';
 
@@ -154,7 +156,9 @@ function ExpiryForecastTab() {
 export default function InventoryReports() {
   const [tab, setTab] = useState('purchases');
   return (
-    <Page className="space-y-4">
+    <>
+      <ContextPanel><InventorySubNav /></ContextPanel>
+      <Page className="space-y-4">
       <PageHeading title="Inventory reports" />
       <Tabs
         tabs={[
@@ -168,6 +172,7 @@ export default function InventoryReports() {
       {tab === 'purchases' && <PurchaseHistoryTab />}
       {tab === 'trends' && <IssuanceTrendsTab />}
       {tab === 'expiry' && <ExpiryForecastTab />}
-    </Page>
+      </Page>
+    </>
   );
 }

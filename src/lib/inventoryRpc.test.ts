@@ -77,7 +77,18 @@ describe('createInventoryRequest', () => {
     expect(id).toBe('new-request-id');
     expect(rpc).toHaveBeenCalledWith('create_inventory_request', expect.objectContaining({
       p_requesting_location_id: 'loc-1',
-      p_items: [{ item_id: 'item-1', requested_qty: 3 }, { item_id: 'item-2', requested_qty: 1.5 }],
+      p_items: [{ item_id: 'item-1', requested_qty: 3, notes: '' }, { item_id: 'item-2', requested_qty: 1.5, notes: '' }],
+    }));
+  });
+
+  it('carries a per-item note through to the RPC (the "Other / not listed" free-text case)', async () => {
+    rpc.mockResolvedValue({ data: 'new-request-id', error: null });
+    await createInventoryRequest({
+      requestingLocationId: 'loc-1',
+      items: [{ itemId: 'other-item-id', requestedQty: 1, notes: 'Need a spare tent pole' }],
+    });
+    expect(rpc).toHaveBeenCalledWith('create_inventory_request', expect.objectContaining({
+      p_items: [{ item_id: 'other-item-id', requested_qty: 1, notes: 'Need a spare tent pole' }],
     }));
   });
 

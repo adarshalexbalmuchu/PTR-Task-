@@ -2415,6 +2415,56 @@ on conflict (name) do nothing;
 alter type inventory_transaction_type add value if not exists 'purchase_receipt';
 commit;
 
+-- Re-deploy with an optional per-item note accepted and stored — the
+-- catalog launched empty (no starter items were ever seeded, only
+-- categories/units), which blocked raising any request at all. The client
+-- now offers a reserved "Other / not listed" catalog item alongside real
+-- ones; picking it reveals a free-text field for what's actually needed,
+-- carried through in this per-line `notes` column (already existed on
+-- inventory_request_items, just never written to). Backward compatible —
+-- item->>'notes' is optional, existing callers omitting it still work.
+-- Signature/return type unchanged, so plain CREATE OR REPLACE applies.
+create or replace function create_inventory_request(
+  p_requesting_location_id uuid,
+  p_items jsonb,
+  p_required_by_date date default null,
+  p_priority task_priority default 'Medium',
+  p_reason text default ''
+) returns uuid language plpgsql security definer set search_path = '' as $$
+declare
+  uid uuid := (select auth.uid());
+  v_request_id uuid;
+  item jsonb;
+begin
+  if uid is null then
+    raise exception 'Not authenticated';
+  end if;
+  if (select public.get_my_role()) is distinct from 'director' and not exists (
+    select 1 from public.inventory_location_staff
+    where location_id = p_requesting_location_id and user_id = uid and active
+  ) then
+    raise exception 'You are not assigned to this location';
+  end if;
+  if p_items is null or jsonb_array_length(p_items) = 0 then
+    raise exception 'A request must include at least one item';
+  end if;
+
+  insert into public.inventory_requests (requesting_location_id, requested_by, required_by_date, priority, reason)
+    values (p_requesting_location_id, uid, p_required_by_date, coalesce(p_priority, 'Medium'), coalesce(p_reason, ''))
+    returning id into v_request_id;
+
+  for item in select * from jsonb_array_elements(p_items) loop
+    insert into public.inventory_request_items (request_id, item_id, requested_qty, notes)
+      values (v_request_id, (item->>'item_id')::uuid, (item->>'requested_qty')::numeric, coalesce(item->>'notes', ''));
+  end loop;
+
+  return v_request_id;
+end;
+$$;
+revoke all on function create_inventory_request(uuid, jsonb, date, task_priority, text) from public;
+revoke execute on function create_inventory_request(uuid, jsonb, date, task_priority, text) from anon;
+grant execute on function create_inventory_request(uuid, jsonb, date, task_priority, text) to authenticated;
+
 create table if not exists inventory_purchases (
   id             uuid primary key default uuid_generate_v4(),
   location_id    uuid not null references inventory_locations(id) on delete restrict,

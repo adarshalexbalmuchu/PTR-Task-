@@ -4,8 +4,9 @@ import { useInventoryLocations } from '../../hooks/useInventoryLocations';
 import { useRanges } from '../../hooks/useRanges';
 import Select from '../../components/Select';
 import EmptyState from '../../components/EmptyState';
-import { CommandBar } from '../../components/layout/Slots';
+import { CommandBar, ContextPanel } from '../../components/layout/Slots';
 import { Page, PageHeading } from '../../components/layout/Page';
+import InventorySubNav from '../../components/inventory/InventorySubNav';
 import { getErrorMessage } from '../../lib/errors';
 import type { InventoryLocationType } from '../../types';
 
@@ -49,7 +50,9 @@ export default function InventoryLocations() {
   };
 
   return (
-    <Page className="space-y-6">
+    <>
+      <ContextPanel><InventorySubNav /></ContextPanel>
+      <Page className="space-y-6">
       <CommandBar>
         <button onClick={() => setFormOpen((o) => !o)} className="btn-primary">
           <Plus className="w-4 h-4" />New location
@@ -117,6 +120,7 @@ export default function InventoryLocations() {
           ))}
         </div>
       )}
-    </Page>
+      </Page>
+    </>
   );
 }
