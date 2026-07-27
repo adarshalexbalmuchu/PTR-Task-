@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight, FileBarChart } from 'lucide-react';
+import { ChevronRight, FileBarChart, History, Package, Tags, MapPin, UsersRound } from 'lucide-react';
 import useStore from '../../store/useStore';
 import { useInventoryStock } from '../../hooks/useInventoryStock';
 import { useInventoryRequests } from '../../hooks/useInventoryRequests';
@@ -32,6 +32,16 @@ function Metric({ label, value, tone = 'default', onClick }: {
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return <div className="px-4 mb-1.5 text-13 font-semibold text-n-90">{children}</div>;
+}
+
+function NavRow({ icon, label, onClick }: { icon: React.ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="w-full flex items-center gap-3 px-4 py-3 text-left active:bg-n-10">
+      <span className="text-n-70 flex-shrink-0">{icon}</span>
+      <span className="flex-1 text-[15px] font-medium text-n-100">{label}</span>
+      <ChevronRight className="w-4 h-4 text-n-50 flex-shrink-0" />
+    </button>
+  );
 }
 
 export default function InventoryHome() {
@@ -71,15 +81,12 @@ export default function InventoryHome() {
         <Metric label="Expiring within 30d" value={expiringSoon.length} tone={expiringSoon.length > 0 ? 'amber' : 'default'} onClick={() => navigate(`${base}/reports`)} />
       </div>
 
-      <div className="px-4 mb-5 space-y-2">
-        <button onClick={() => navigate(`${base}/reports`)} className="w-full flex items-center justify-between gap-3 bg-white border border-n-30 rounded-lg px-4 py-3 active:bg-n-10">
-          <span className="flex items-center gap-2 text-[15px] font-medium text-n-100"><FileBarChart className="w-4 h-4 text-n-70" />Inventory reports</span>
-          <ChevronRight className="w-4 h-4 text-n-50" />
-        </button>
-        <button onClick={() => navigate(`${base}/transactions`)} className="w-full flex items-center justify-between gap-3 bg-white border border-n-30 rounded-lg px-4 py-3 active:bg-n-10">
-          <span className="text-[15px] font-medium text-n-100">Transactions</span>
-          <ChevronRight className="w-4 h-4 text-n-50" />
-        </button>
+      <div className="mb-5">
+        <SectionLabel>More</SectionLabel>
+        <div className="bg-white divide-y divide-n-20">
+          <NavRow icon={<FileBarChart className="w-4 h-4" />} label="Inventory reports" onClick={() => navigate(`${base}/reports`)} />
+          <NavRow icon={<History className="w-4 h-4" />} label="Transactions" onClick={() => navigate(`${base}/transactions`)} />
+        </div>
       </div>
 
       {/* Catalog & staffing — director-only management pages, otherwise
@@ -88,17 +95,10 @@ export default function InventoryHome() {
         <div className="mb-5">
           <SectionLabel>Catalog & staffing</SectionLabel>
           <div className="bg-white divide-y divide-n-20">
-            {[
-              { label: 'Items', to: `${base}/items` },
-              { label: 'Categories & units', to: `${base}/categories` },
-              { label: 'Locations', to: `${base}/locations` },
-              { label: 'Managers', to: `${base}/managers` },
-            ].map((l) => (
-              <button key={l.to} onClick={() => navigate(l.to)} className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left active:bg-n-10">
-                <span className="text-[15px] font-medium text-n-100">{l.label}</span>
-                <ChevronRight className="w-4 h-4 text-n-50 flex-shrink-0" />
-              </button>
-            ))}
+            <NavRow icon={<Package className="w-4 h-4" />} label="Items" onClick={() => navigate(`${base}/items`)} />
+            <NavRow icon={<Tags className="w-4 h-4" />} label="Categories & units" onClick={() => navigate(`${base}/categories`)} />
+            <NavRow icon={<MapPin className="w-4 h-4" />} label="Locations" onClick={() => navigate(`${base}/locations`)} />
+            <NavRow icon={<UsersRound className="w-4 h-4" />} label="Managers" onClick={() => navigate(`${base}/managers`)} />
           </div>
         </div>
       )}
