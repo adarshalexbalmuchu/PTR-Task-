@@ -783,6 +783,34 @@ export interface Database {
         };
         Relationships: Relationships;
       };
+      inventory_request_photos: {
+        Row: {
+          id: string;
+          request_id: string;
+          uploaded_by: string;
+          path: string;
+          size: number;
+          mime_type: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          request_id: string;
+          uploaded_by: string;
+          path: string;
+          size?: number;
+          mime_type?: string;
+        };
+        Update: {
+          id?: string;
+          request_id?: string;
+          uploaded_by?: string;
+          path?: string;
+          size?: number;
+          mime_type?: string;
+        };
+        Relationships: Relationships;
+      };
       inventory_purchases: {
         Row: {
           id: string;

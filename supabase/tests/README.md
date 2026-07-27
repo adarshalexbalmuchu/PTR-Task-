@@ -63,11 +63,14 @@ repeated-failure/missed-occurrence detection with one-shot dedup, and
 (Inventory, Phase 2) post_inventory_purchase's location-staff authorization
 and idempotency, purchase→batch creation being conditional on
 track_batch/track_expiry, issue_inventory_stock's FEFO batch depletion
-(including the legacy zero-batch-rows fallback), and the trusted-flag fix
+(including the legacy zero-batch-rows fallback), the trusted-flag fix
 that lets a non-director's issue_inventory_stock call actually complete
 (see the schema comment above enforce_inventory_request_staff_update's
-Phase 2 redeploy). All 70 checks should pass — if one fails after a schema
-change, that's a real RLS/scheduler regression.
+Phase 2 redeploy), and inventory_request_photos' location-scoped read/
+insert/delete (an outsider location sees and can attach nothing; the
+owning location's staff and the director both can). All 76 checks should
+pass — if one fails after a schema change, that's a real RLS/scheduler
+regression.
 
 ## Run the load/scale test
 

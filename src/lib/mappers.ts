@@ -2,7 +2,7 @@ import type { Database, Json } from './database.types';
 import type {
   User, Task, TaskUpdate, Comment, Attachment, Notification, Incident, IncidentPhoto, AuditLogEntry, LiveLocation,
   InventoryLocation, InventoryCategory, InventoryUnit, InventoryItem, InventoryStock, InventoryTransaction,
-  InventoryRequest, InventoryRequestItem, InventoryPurchase, InventoryPurchaseItem, InventoryBatch,
+  InventoryRequest, InventoryRequestItem, InventoryRequestPhoto, InventoryPurchase, InventoryPurchaseItem, InventoryBatch,
   TaskGroup, TaskGroupMember, TaskOccurrence, GroupMessage,
   TaskSeries, RecurrenceRule,
 } from '../types';
@@ -215,6 +215,7 @@ type InventoryStockRow = Database['public']['Tables']['inventory_stock']['Row'];
 type InventoryTransactionRow = Database['public']['Tables']['inventory_transactions']['Row'];
 type InventoryRequestRow = Database['public']['Tables']['inventory_requests']['Row'];
 type InventoryRequestItemRow = Database['public']['Tables']['inventory_request_items']['Row'];
+type InventoryRequestPhotoRow = Database['public']['Tables']['inventory_request_photos']['Row'];
 type InventoryPurchaseRow = Database['public']['Tables']['inventory_purchases']['Row'];
 type InventoryPurchaseItemRow = Database['public']['Tables']['inventory_purchase_items']['Row'];
 type InventoryBatchRow = Database['public']['Tables']['inventory_batches']['Row'];
@@ -343,11 +344,25 @@ export function mapInventoryRequestItem(
   };
 }
 
+// row.path stores the bare storage path; resolveInventoryRequestPhotoUrls()
+// in useInventoryRequests.ts replaces url with a time-limited signed URL —
+// same pattern as mapIncidentPhoto.
+export function mapInventoryRequestPhoto(row: InventoryRequestPhotoRow): InventoryRequestPhoto {
+  return {
+    id: row.id,
+    path: row.path,
+    url: row.path,
+    size: row.size,
+    type: row.mime_type,
+  };
+}
+
 export function mapInventoryRequest(
   row: InventoryRequestRow & {
     inventory_locations?: { name: string } | null;
     profiles?: { name: string } | null;
     inventory_request_items?: InventoryRequestItemRow[];
+    inventory_request_photos?: InventoryRequestPhotoRow[];
   },
 ): InventoryRequest {
   return {
@@ -363,6 +378,7 @@ export function mapInventoryRequest(
     notes: row.notes,
     rejectReason: row.reject_reason ?? undefined,
     items: (row.inventory_request_items ?? []).map(mapInventoryRequestItem),
+    photos: (row.inventory_request_photos ?? []).map(mapInventoryRequestPhoto),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };

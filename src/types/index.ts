@@ -309,6 +309,14 @@ export interface InventoryRequestItem {
   notes: string;
 }
 
+export interface InventoryRequestPhoto {
+  id: string;
+  path: string;
+  url: string;
+  size: number;
+  type: string;
+}
+
 export interface InventoryRequest {
   id: string;
   requestingLocationId: string;
@@ -322,6 +330,7 @@ export interface InventoryRequest {
   notes: string;
   rejectReason?: string;
   items: InventoryRequestItem[];
+  photos: InventoryRequestPhoto[];
   createdAt: string;
   updatedAt: string;
 }

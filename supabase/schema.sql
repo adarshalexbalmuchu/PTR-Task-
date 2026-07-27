@@ -2900,6 +2900,120 @@ create or replace view inventory_issued_monthly
 
 grant select on inventory_issued_monthly to authenticated;
 
+-- ─────────────────────────────────────────────
+-- Optional photo attachments on a stock request — mirrors incident_photos
+-- (same columns, same compress-client-side-then-upload convention, see
+-- src/lib/inventoryRequestPhotos.ts) but scoped by the inventory module's
+-- own ownership model: any active staff member at the request's
+-- *location* (get_my_inventory_location_ids()), not just the specific
+-- person who filed it — same as inventory_request_items' own RLS just
+-- below, not incidents' reported_by-only pattern. Useful for "Other / not
+-- listed" lines especially — a photo of what's actually needed.
+-- ─────────────────────────────────────────────
+create table if not exists inventory_request_photos (
+  id          uuid primary key default uuid_generate_v4(),
+  request_id  uuid not null references inventory_requests(id) on delete cascade,
+  uploaded_by uuid not null references profiles(id) on delete restrict,
+  path        text not null,
+  size        bigint not null default 0,
+  mime_type   text not null default 'image/jpeg',
+  created_at  timestamptz not null default now()
+);
+create index if not exists inventory_request_photos_request_id_idx on inventory_request_photos(request_id);
+
+alter table inventory_request_photos enable row level security;
+
+drop policy if exists "inventory_request_photos_director" on inventory_request_photos;
+create policy "inventory_request_photos_director" on inventory_request_photos
+  for all using ((select get_my_role()) = 'director');
+
+drop policy if exists "inventory_request_photos_staff_read" on inventory_request_photos;
+create policy "inventory_request_photos_staff_read" on inventory_request_photos
+  for select using (
+    exists (
+      select 1 from inventory_requests req
+      where req.id = inventory_request_photos.request_id
+        and req.requesting_location_id = any ((select get_my_inventory_location_ids())::uuid[])
+    )
+  );
+
+drop policy if exists "inventory_request_photos_staff_insert" on inventory_request_photos;
+create policy "inventory_request_photos_staff_insert" on inventory_request_photos
+  for insert with check (
+    uploaded_by = (select auth.uid())
+    and exists (
+      select 1 from inventory_requests req
+      where req.id = inventory_request_photos.request_id
+        and req.requesting_location_id = any ((select get_my_inventory_location_ids())::uuid[])
+    )
+  );
+
+drop policy if exists "inventory_request_photos_staff_delete" on inventory_request_photos;
+create policy "inventory_request_photos_staff_delete" on inventory_request_photos
+  for delete using (
+    exists (
+      select 1 from inventory_requests req
+      where req.id = inventory_request_photos.request_id
+        and req.requesting_location_id = any ((select get_my_inventory_location_ids())::uuid[])
+    )
+  );
+
+-- Private bucket, 5 MB hard cap — same convention as incident-photos.
+insert into storage.buckets (id, name, public, file_size_limit)
+  values ('inventory-request-photos', 'inventory-request-photos', false, 5242880)
+  on conflict (id) do update set
+    public = excluded.public,
+    file_size_limit = excluded.file_size_limit;
+
+drop policy if exists "inventory_request_photos_upload" on storage.objects;
+drop policy if exists "inventory_request_photos_download" on storage.objects;
+drop policy if exists "inventory_request_photos_object_delete" on storage.objects;
+
+-- Objects stored under "<request-id>/<uuid>.jpg" — the EXISTS subquery
+-- runs under the caller's own inventory_requests visibility, so upload/
+-- download/delete all follow the same location-staff scoping as the
+-- table policies above (same technique as incident-photos/task-attachments).
+create policy "inventory_request_photos_upload" on storage.objects
+  for insert with check (
+    bucket_id = 'inventory-request-photos'
+    and (select auth.uid()) is not null
+    and exists (
+      select 1 from public.inventory_requests req
+      where req.id::text = (storage.foldername(name))[1]
+        and (
+          (select public.get_my_role()) = 'director'
+          or req.requesting_location_id = any ((select public.get_my_inventory_location_ids())::uuid[])
+        )
+    )
+  );
+
+create policy "inventory_request_photos_download" on storage.objects
+  for select using (
+    bucket_id = 'inventory-request-photos'
+    and (select auth.uid()) is not null
+    and exists (
+      select 1 from public.inventory_requests req
+      where req.id::text = (storage.foldername(name))[1]
+        and (
+          (select public.get_my_role()) = 'director'
+          or req.requesting_location_id = any ((select public.get_my_inventory_location_ids())::uuid[])
+        )
+    )
+  );
+
+create policy "inventory_request_photos_object_delete" on storage.objects
+  for delete using (
+    bucket_id = 'inventory-request-photos'
+    and exists (
+      select 1 from public.inventory_requests req
+      where req.id::text = (storage.foldername(name))[1]
+        and (
+          (select public.get_my_role()) = 'director'
+          or req.requesting_location_id = any ((select public.get_my_inventory_location_ids())::uuid[])
+        )
+    )
+  );
+
 -- ═════════════════════════════════════════════
 -- Task Groups & Recurring Assignments — Phase 1
 -- ═════════════════════════════════════════════

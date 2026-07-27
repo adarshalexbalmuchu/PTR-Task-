@@ -4,6 +4,8 @@ import { supabase } from '../lib/supabase';
 import type { NotificationType } from '../lib/database.types';
 import { mapInventoryRequest } from '../lib/mappers';
 import { logInventoryAction } from '../lib/audit';
+import { getErrorMessage } from '../lib/errors';
+import { uploadInventoryRequestPhoto } from '../lib/inventoryRequestPhotos';
 import { verifyAffectedRows, SINGLE_RECORD_NOT_UPDATED_MESSAGE } from '../lib/mutationVerification';
 import {
   approveInventoryRequest as approveRpc,
@@ -13,6 +15,25 @@ import {
 } from '../lib/inventoryRpc';
 import useStore from '../store/useStore';
 import type { InventoryRequest, TaskPriority } from '../types';
+
+const PHOTO_URL_TTL_SECONDS = 3600;
+
+// inventory_request_photos.path stores the bare storage path (the bucket
+// is private); this swaps in time-limited signed URLs before the requests
+// reach the UI. One signed-url request across every photo in the list —
+// same batching reasoning as resolveIncidentPhotoUrls in useIncidents.ts.
+async function resolveInventoryRequestPhotoUrls(requests: InventoryRequest[]): Promise<InventoryRequest[]> {
+  const allPaths = requests.flatMap((r) => r.photos.map((p) => p.path));
+  if (allPaths.length === 0) return requests;
+  const { data } = await supabase.storage
+    .from('inventory-request-photos')
+    .createSignedUrls(allPaths, PHOTO_URL_TTL_SECONDS);
+  const signedByPath = new Map((data ?? []).map((d) => [d.path, d.signedUrl]));
+  return requests.map((request) => ({
+    ...request,
+    photos: request.photos.map((p) => ({ ...p, url: signedByPath.get(p.path) ?? p.url })),
+  }));
+}
 
 // One batched insert instead of a round-trip per recipient — same pattern
 // as insertNotifications in useTasks.ts, keyed on inventory_request_id
@@ -45,10 +66,10 @@ export function useInventoryRequests() {
       // separately, correctly-joined query, which is why this went unnoticed).
       const { data, error } = await supabase
         .from('inventory_requests')
-        .select('*, inventory_locations(name), profiles(name), inventory_request_items(*, inventory_items(name, unit_id, inventory_units(abbreviation, allows_fractional)))')
+        .select('*, inventory_locations(name), profiles(name), inventory_request_items(*, inventory_items(name, unit_id, inventory_units(abbreviation, allows_fractional))), inventory_request_photos(*)')
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return data.map(mapInventoryRequest);
+      return resolveInventoryRequestPhotoUrls(data.map(mapInventoryRequest));
     },
   });
 
@@ -73,19 +94,67 @@ export function useInventoryRequests() {
       priority?: TaskPriority;
       reason?: string;
       notes?: string;
+      files?: File[];
     }) => {
       if (!currentUser) throw new Error('Not authenticated');
       // Single SECURITY DEFINER RPC, not two separate inserts: the request
       // header and its item rows are written in one atomic transaction, so
       // a failure on the items (inactive item, duplicate item) can't leave
       // a zero-item request header behind.
-      return createRequestRpc({
+      const requestId = await createRequestRpc({
         requestingLocationId: input.requestingLocationId,
         items: input.items,
         requiredByDate: input.requiredByDate,
         priority: input.priority,
         reason: input.reason,
       });
+      // Photos are optional and best-effort after the request itself
+      // exists — same pattern as reportIncident: a photo upload failure
+      // doesn't roll back the (already-committed) request, it's surfaced
+      // as an error the caller can show without losing the request.
+      const failures: string[] = [];
+      for (const file of input.files ?? []) {
+        try {
+          await uploadInventoryRequestPhoto(requestId, currentUser.id, file);
+        } catch (err) {
+          failures.push(getErrorMessage(err, `Failed to upload "${file.name}"`));
+        }
+      }
+      if (failures.length > 0) throw new Error(failures.join('; '));
+      return requestId;
+    },
+    onSuccess: invalidate,
+  });
+
+  // Adding photos to an already-created request (e.g. the requester
+  // realizes they forgot one, or a director wants to attach a reference
+  // photo while reviewing) — same upload path as createRequest's, just
+  // against an existing requestId.
+  const addPhotos = useMutation({
+    mutationFn: async ({ requestId, files }: { requestId: string; files: File[] }) => {
+      if (!currentUser) throw new Error('Not authenticated');
+      const failures: string[] = [];
+      for (const file of files) {
+        try {
+          await uploadInventoryRequestPhoto(requestId, currentUser.id, file);
+        } catch (err) {
+          failures.push(getErrorMessage(err, `Failed to upload "${file.name}"`));
+        }
+      }
+      if (failures.length > 0) throw new Error(failures.join('; '));
+    },
+    onSuccess: invalidate,
+  });
+
+  const removePhoto = useMutation({
+    mutationFn: async (photoId: string) => {
+      const request = requests.find((r) => r.photos.some((p) => p.id === photoId));
+      const photo = request?.photos.find((p) => p.id === photoId);
+      const { error } = await supabase.from('inventory_request_photos').delete().eq('id', photoId);
+      if (error) throw error;
+      if (photo?.path) {
+        await supabase.storage.from('inventory-request-photos').remove([photo.path]);
+      }
     },
     onSuccess: invalidate,
   });
@@ -192,5 +261,5 @@ export function useInventoryRequests() {
     },
   });
 
-  return { requests, isLoading, createRequest, submitRequest, cancelRequest, approveRequest, rejectRequest, issueStock };
+  return { requests, isLoading, createRequest, submitRequest, cancelRequest, approveRequest, rejectRequest, issueStock, addPhotos, removePhoto };
 }

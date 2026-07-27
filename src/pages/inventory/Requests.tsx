@@ -15,6 +15,7 @@ import { CommandBar, ContextPanel } from '../../components/layout/Slots';
 import { Page, PageHeading } from '../../components/layout/Page';
 import InventorySubNav from '../../components/inventory/InventorySubNav';
 import ItemPicker from '../../components/inventory/ItemPicker';
+import EvidenceCapture, { EMPTY_EVIDENCE, type CapturedEvidence } from '../../components/mobile/EvidenceCapture';
 import { getErrorMessage } from '../../lib/errors';
 import { formatDate } from '../../utils/formatters';
 import type { InventoryRequestStatus, TaskPriority } from '../../types';
@@ -62,6 +63,7 @@ function NewRequestForm({ onClose }: { onClose: () => void }) {
   const [requiredByDate, setRequiredByDate] = useState('');
   const [priority, setPriority] = useState<TaskPriority>('Medium');
   const [reason, setReason] = useState('');
+  const [evidence, setEvidence] = useState<CapturedEvidence>(EMPTY_EVIDENCE);
 
   const addLine = () => setLines((ls) => [...ls, { itemId: '', qty: '1', note: '' }]);
   const removeLine = (i: number) => setLines((ls) => ls.filter((_, idx) => idx !== i));
@@ -105,6 +107,7 @@ function NewRequestForm({ onClose }: { onClose: () => void }) {
         requiredByDate: requiredByDate || undefined,
         priority,
         reason: reason.trim() || undefined,
+        files: evidence.photos,
       });
       await submitRequest.mutateAsync(requestId);
       onClose();
@@ -174,6 +177,10 @@ function NewRequestForm({ onClose }: { onClose: () => void }) {
       <div>
         <label className="block text-13 font-medium text-n-90 mb-1.5">Reason</label>
         <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} className="input-field resize-none" style={{ fontSize: '16px' }} />
+      </div>
+      <div>
+        <label className="block text-13 font-medium text-n-90 mb-1.5">Photos (optional)</label>
+        <EvidenceCapture value={evidence} onChange={setEvidence} photosOnly showGps={false} showNote={false} />
       </div>
 
       <div className="flex gap-2">

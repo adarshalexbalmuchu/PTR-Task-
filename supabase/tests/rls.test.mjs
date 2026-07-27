@@ -810,6 +810,39 @@ async function run() {
       const legacyStock = await client.query(`select available_qty from inventory_stock where item_id = $1 and location_id = $2`, [legacyId, locId]);
       check('the legacy item\'s aggregate stock still decrements normally', Number(legacyStock.rows[0].available_qty) === 2, JSON.stringify(legacyStock.rows));
 
+      // 63-67. inventory_request_photos — scoped by the request's location
+      // exactly like inventory_request_items, not by who filed it.
+      await setUser(U.guardBetla);
+      const photoInsert = await client.query(
+        `insert into inventory_request_photos (request_id, uploaded_by, path, size, mime_type) values ($1, $2, 'x/y.jpg', 123, 'image/jpeg') returning id`,
+        [vaccineReqId, U.guardBetla],
+      );
+      const photoId = photoInsert.rows[0].id;
+      check('an assigned staff member can attach a photo to their location\'s request', !!photoId);
+
+      const photosAsGuard = await client.query(`select id from inventory_request_photos where request_id = $1`, [vaccineReqId]);
+      check('the assigned staff member sees the photo they just attached', photosAsGuard.rows.length === 1);
+
+      await setUser(U.guardKechki);
+      const photosAsOutsider = await client.query(`select id from inventory_request_photos where request_id = $1`, [vaccineReqId]);
+      check('a staff member from a different location sees zero photos on it', photosAsOutsider.rows.length === 0, JSON.stringify(photosAsOutsider.rows));
+
+      const outsiderInsertErr = await expectErrorSp(() =>
+        client.query(
+          `insert into inventory_request_photos (request_id, uploaded_by, path, size, mime_type) values ($1, $2, 'x/z.jpg', 123, 'image/jpeg')`,
+          [vaccineReqId, U.guardKechki],
+        ),
+      );
+      check('a staff member from a different location cannot attach a photo to it', outsiderInsertErr !== null, outsiderInsertErr ?? 'no error raised');
+
+      await setUser(U.director);
+      const photosAsDirector = await client.query(`select id from inventory_request_photos where request_id = $1`, [vaccineReqId]);
+      check('the director sees the photo regardless of location', photosAsDirector.rows.length === 1);
+
+      await setUser(U.guardBetla);
+      const photoDelete = await client.query(`delete from inventory_request_photos where id = $1 returning id`, [photoId]);
+      check('the assigned staff member can remove a photo from their own location\'s request', photoDelete.rows.length === 1);
+
       await client.query('ROLLBACK');
     } finally {
       await client.end();
