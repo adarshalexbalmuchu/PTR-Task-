@@ -2,7 +2,8 @@ import type { Database, Json } from './database.types';
 import type {
   User, Task, TaskUpdate, Comment, Attachment, Notification, Incident, IncidentPhoto, AuditLogEntry, LiveLocation,
   InventoryLocation, InventoryCategory, InventoryUnit, InventoryItem, InventoryStock, InventoryTransaction,
-  InventoryRequest, InventoryRequestItem, TaskGroup, TaskGroupMember, TaskOccurrence, GroupMessage,
+  InventoryRequest, InventoryRequestItem, InventoryPurchase, InventoryPurchaseItem, InventoryBatch,
+  TaskGroup, TaskGroupMember, TaskOccurrence, GroupMessage,
   TaskSeries, RecurrenceRule,
 } from '../types';
 
@@ -214,6 +215,9 @@ type InventoryStockRow = Database['public']['Tables']['inventory_stock']['Row'];
 type InventoryTransactionRow = Database['public']['Tables']['inventory_transactions']['Row'];
 type InventoryRequestRow = Database['public']['Tables']['inventory_requests']['Row'];
 type InventoryRequestItemRow = Database['public']['Tables']['inventory_request_items']['Row'];
+type InventoryPurchaseRow = Database['public']['Tables']['inventory_purchases']['Row'];
+type InventoryPurchaseItemRow = Database['public']['Tables']['inventory_purchase_items']['Row'];
+type InventoryBatchRow = Database['public']['Tables']['inventory_batches']['Row'];
 
 export function mapInventoryLocation(row: InventoryLocationRow): InventoryLocation {
   return {
@@ -361,6 +365,72 @@ export function mapInventoryRequest(
     items: (row.inventory_request_items ?? []).map(mapInventoryRequestItem),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+// ─────────────────────────────────────────────
+// Hospitality Inventory Management — Phase 2 (procurement + batch/expiry)
+// ─────────────────────────────────────────────
+
+export function mapInventoryPurchaseItem(
+  row: InventoryPurchaseItemRow & {
+    inventory_items?: { name: string; inventory_units?: { abbreviation: string } | null } | null;
+  },
+): InventoryPurchaseItem {
+  return {
+    id: row.id,
+    purchaseId: row.purchase_id,
+    itemId: row.item_id,
+    itemName: row.inventory_items?.name ?? undefined,
+    unitAbbreviation: row.inventory_items?.inventory_units?.abbreviation ?? undefined,
+    quantity: row.quantity,
+    unitCost: row.unit_cost ?? undefined,
+    batchNumber: row.batch_number ?? undefined,
+    expiryDate: row.expiry_date ?? undefined,
+    notes: row.notes,
+  };
+}
+
+export function mapInventoryPurchase(
+  row: InventoryPurchaseRow & {
+    inventory_locations?: { name: string } | null;
+    profiles?: { name: string } | null;
+    inventory_purchase_items?: InventoryPurchaseItemRow[];
+  },
+): InventoryPurchase {
+  return {
+    id: row.id,
+    locationId: row.location_id,
+    locationName: row.inventory_locations?.name ?? undefined,
+    supplierName: row.supplier_name,
+    invoiceNumber: row.invoice_number ?? undefined,
+    purchaseDate: row.purchase_date,
+    notes: row.notes,
+    createdBy: row.created_by,
+    createdByName: row.profiles?.name ?? undefined,
+    items: (row.inventory_purchase_items ?? []).map(mapInventoryPurchaseItem),
+    createdAt: row.created_at,
+  };
+}
+
+export function mapInventoryBatch(
+  row: InventoryBatchRow & {
+    inventory_items?: { name: string } | null;
+    inventory_locations?: { name: string } | null;
+  },
+): InventoryBatch {
+  return {
+    id: row.id,
+    itemId: row.item_id,
+    itemName: row.inventory_items?.name ?? undefined,
+    locationId: row.location_id,
+    locationName: row.inventory_locations?.name ?? undefined,
+    batchNumber: row.batch_number ?? undefined,
+    expiryDate: row.expiry_date ?? undefined,
+    receivedQty: row.received_qty,
+    remainingQty: row.remaining_qty,
+    sourcePurchaseId: row.source_purchase_id ?? undefined,
+    createdAt: row.created_at,
   };
 }
 

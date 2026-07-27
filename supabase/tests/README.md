@@ -57,11 +57,17 @@ group/occurrence conversation read/post permissions including the
 members_can_reply toggle and coordinator override, (Task Groups, Phase 2)
 generate_due_task_occurrences()'s daily/weekly/monthly recurrence matching
 (including day-of-month clamping to a shorter month), paused-series
-skipping, and idempotent re-runs, and (Task Groups, Phase 3) the
+skipping, and idempotent re-runs, (Task Groups, Phase 3) the
 set_message_pinned authority check and generate_series_escalations()'s
-repeated-failure/missed-occurrence detection with one-shot dedup. All 55
-checks should pass — if one fails after a schema change, that's a real
-RLS/scheduler regression.
+repeated-failure/missed-occurrence detection with one-shot dedup, and
+(Inventory, Phase 2) post_inventory_purchase's location-staff authorization
+and idempotency, purchase→batch creation being conditional on
+track_batch/track_expiry, issue_inventory_stock's FEFO batch depletion
+(including the legacy zero-batch-rows fallback), and the trusted-flag fix
+that lets a non-director's issue_inventory_stock call actually complete
+(see the schema comment above enforce_inventory_request_staff_update's
+Phase 2 redeploy). All 70 checks should pass — if one fails after a schema
+change, that's a real RLS/scheduler regression.
 
 ## Run the load/scale test
 

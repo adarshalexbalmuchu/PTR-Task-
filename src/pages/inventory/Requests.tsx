@@ -168,7 +168,9 @@ export default function InventoryRequestsPage() {
   const isDirector = canManageInventory(currentUser?.role);
   const { requests, isLoading } = useInventoryRequests();
   const [formOpen, setFormOpen] = useState(false);
-  const base = isDirector ? '/director/inventory' : '/inventory';
+  // No route is ever mounted at bare '/inventory' — only /director/inventory
+  // and /guard/inventory exist (App.tsx).
+  const base = isDirector ? '/director/inventory' : '/guard/inventory';
 
   return (
     <Page className="space-y-4">

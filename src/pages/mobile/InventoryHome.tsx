@@ -1,11 +1,14 @@
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, FileBarChart } from 'lucide-react';
 import useStore from '../../store/useStore';
 import { useInventoryStock } from '../../hooks/useInventoryStock';
 import { useInventoryRequests } from '../../hooks/useInventoryRequests';
 import { useInventoryLocations } from '../../hooks/useInventoryLocations';
+import { useInventoryPurchases } from '../../hooks/useInventoryPurchases';
+import { useInventoryBatches } from '../../hooks/useInventoryBatches';
 import { useSyncStatus } from '../../hooks/useSyncStatus';
 import { canManageInventory } from '../../lib/permissions';
+import { daysUntilExpiry } from '../../utils/expiry';
 
 function greeting(): string {
   const h = new Date().getHours();
@@ -34,15 +37,22 @@ export default function InventoryHome() {
   const navigate = useNavigate();
   const currentUser = useStore((s) => s.currentUser);
   const isDirector = canManageInventory(currentUser?.role);
-  const base = isDirector ? '/director/inventory' : '/inventory';
+  // No route is ever mounted at bare '/inventory' — only /director/inventory
+  // and /guard/inventory exist (App.tsx). The wrong prefix here silently
+  // sent every non-director inventory link to the app's catch-all route,
+  // which bounces to the user's home page instead of the intended page.
+  const base = isDirector ? '/director/inventory' : '/guard/inventory';
   const { stock } = useInventoryStock();
   const { requests } = useInventoryRequests();
   const { locations } = useInventoryLocations();
+  const { purchases } = useInventoryPurchases();
+  const { batches } = useInventoryBatches();
   const { state: syncState } = useSyncStatus();
 
   const lowStock = stock.filter((s) => s.minStock !== undefined && s.availableQty <= s.minStock);
   const pendingApproval = requests.filter((r) => r.status === 'Submitted');
   const myOpenRequests = requests.filter((r) => ['Draft', 'Submitted', 'Approved', 'PartiallyApproved'].includes(r.status));
+  const expiringSoon = batches.filter((b) => b.remainingQty > 0 && b.expiryDate && daysUntilExpiry(b.expiryDate) <= 30);
 
   return (
     <div className="pb-4">
@@ -60,6 +70,15 @@ export default function InventoryHome() {
         ) : (
           <Metric label="My open requests" value={myOpenRequests.length} tone={myOpenRequests.length > 0 ? 'amber' : 'default'} onClick={() => navigate(`${base}/requests`)} />
         )}
+        <Metric label="Purchases" value={purchases.length} onClick={() => navigate(`${base}/purchases`)} />
+        <Metric label="Expiring within 30d" value={expiringSoon.length} tone={expiringSoon.length > 0 ? 'amber' : 'default'} onClick={() => navigate(`${base}/reports`)} />
+      </div>
+
+      <div className="px-4 mb-5">
+        <button onClick={() => navigate(`${base}/reports`)} className="w-full flex items-center justify-between gap-3 bg-white border border-n-30 rounded-lg px-4 py-3 active:bg-n-10">
+          <span className="flex items-center gap-2 text-[15px] font-medium text-n-100"><FileBarChart className="w-4 h-4 text-n-70" />Inventory reports</span>
+          <ChevronRight className="w-4 h-4 text-n-50" />
+        </button>
       </div>
 
       {isDirector && pendingApproval.length > 0 && (

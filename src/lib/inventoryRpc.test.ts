@@ -6,7 +6,7 @@ vi.mock('./supabase', () => ({
   supabase: { rpc: (...args: unknown[]) => rpc(...args) },
 }));
 
-const { postOpeningBalance, issueInventoryStock, createInventoryRequest, approveInventoryRequest, rejectInventoryRequest } =
+const { postOpeningBalance, issueInventoryStock, createInventoryRequest, approveInventoryRequest, rejectInventoryRequest, postInventoryPurchase } =
   await import('./inventoryRpc');
 
 beforeEach(() => {
@@ -85,6 +85,43 @@ describe('createInventoryRequest', () => {
     rpc.mockResolvedValue({ data: null, error: { message: 'A request must include at least one item' } });
     await expect(createInventoryRequest({ requestingLocationId: 'loc-1', items: [] }))
       .rejects.toThrow('A request must include at least one item');
+  });
+});
+
+describe('postInventoryPurchase', () => {
+  it('maps args and items to the RPC jsonb shape', async () => {
+    rpc.mockResolvedValue({ data: 'new-purchase-id', error: null });
+    const id = await postInventoryPurchase({
+      locationId: 'loc-1',
+      supplierName: 'Acme Supplies',
+      purchaseDate: '2026-07-27',
+      items: [{ itemId: 'item-1', quantity: 10, unitCost: 25.5, batchNumber: 'B1', expiryDate: '2026-12-31' }],
+      idempotencyKey: 'key-3',
+    });
+    expect(id).toBe('new-purchase-id');
+    expect(rpc).toHaveBeenCalledWith('post_inventory_purchase', {
+      p_location_id: 'loc-1',
+      p_supplier_name: 'Acme Supplies',
+      p_invoice_number: null,
+      p_purchase_date: '2026-07-27',
+      p_notes: '',
+      p_items: [{ item_id: 'item-1', quantity: 10, unit_cost: 25.5, batch_number: 'B1', expiry_date: '2026-12-31' }],
+      p_idempotency_key: 'key-3',
+    });
+  });
+
+  it('returns null for a deduped retry', async () => {
+    rpc.mockResolvedValue({ data: null, error: null });
+    const id = await postInventoryPurchase({
+      locationId: 'loc-1', purchaseDate: '2026-07-27', items: [{ itemId: 'item-1', quantity: 1 }], idempotencyKey: 'key-3',
+    });
+    expect(id).toBeNull();
+  });
+
+  it('throws on a permission error from an unassigned location', async () => {
+    rpc.mockResolvedValue({ data: null, error: { message: 'You are not assigned to this location' } });
+    await expect(postInventoryPurchase({ locationId: 'loc-1', purchaseDate: '2026-07-27', items: [{ itemId: 'item-1', quantity: 1 }] }))
+      .rejects.toThrow('You are not assigned to this location');
   });
 });
 

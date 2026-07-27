@@ -11,6 +11,7 @@ async function logAudit(params: {
   inventoryItemId?: string;
   inventoryTransactionId?: string;
   inventoryRequestId?: string;
+  inventoryPurchaseId?: string;
 }) {
   // Best-effort — a logging failure should never block the underlying
   // task/inventory mutation the user actually cares about.
@@ -24,6 +25,7 @@ async function logAudit(params: {
     inventory_item_id: params.inventoryItemId ?? null,
     inventory_transaction_id: params.inventoryTransactionId ?? null,
     inventory_request_id: params.inventoryRequestId ?? null,
+    inventory_purchase_id: params.inventoryPurchaseId ?? null,
   }).then(({ error }) => {
     if (error) console.error('audit log insert failed', error);
   });
@@ -44,13 +46,14 @@ export async function logInventoryAction(
   actorId: string,
   action: string,
   detail: string,
-  refs: { itemId?: string; transactionId?: string; requestId?: string } = {},
+  refs: { itemId?: string; transactionId?: string; requestId?: string; purchaseId?: string } = {},
 ) {
   await logAudit({
     actorId, action, detail,
     inventoryItemId: refs.itemId,
     inventoryTransactionId: refs.transactionId,
     inventoryRequestId: refs.requestId,
+    inventoryPurchaseId: refs.purchaseId,
   });
 }
 

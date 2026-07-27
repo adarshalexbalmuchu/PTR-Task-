@@ -28,7 +28,9 @@ export default function InventoryRequestDetail() {
   const navigate = useNavigate();
   const currentUser = useStore((s) => s.currentUser);
   const isDirector = canManageInventory(currentUser?.role);
-  const base = isDirector ? '/director/inventory' : '/inventory';
+  // No route is ever mounted at bare '/inventory' — only /director/inventory
+  // and /guard/inventory exist (App.tsx).
+  const base = isDirector ? '/director/inventory' : '/guard/inventory';
   const { requests, isLoading, cancelRequest, approveRequest, rejectRequest, issueStock } = useInventoryRequests();
   const { stock } = useInventoryStock();
   const request = requests.find((r) => r.id === id);

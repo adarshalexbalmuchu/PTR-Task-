@@ -1,10 +1,14 @@
 import { useNavigate } from 'react-router-dom';
+import { FileBarChart, ChevronRight } from 'lucide-react';
 import useStore from '../../store/useStore';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { useInventoryStock } from '../../hooks/useInventoryStock';
 import { useInventoryRequests } from '../../hooks/useInventoryRequests';
 import { useInventoryLocations } from '../../hooks/useInventoryLocations';
+import { useInventoryPurchases } from '../../hooks/useInventoryPurchases';
+import { useInventoryBatches } from '../../hooks/useInventoryBatches';
 import { canManageInventory } from '../../lib/permissions';
+import { daysUntilExpiry } from '../../utils/expiry';
 import { Page, PageHeading, SectionTitle } from '../../components/layout/Page';
 import InventoryHome from '../mobile/InventoryHome';
 
@@ -28,13 +32,18 @@ export default function InventoryDashboard() {
   const { stock } = useInventoryStock();
   const { requests } = useInventoryRequests();
   const { locations } = useInventoryLocations();
+  const { purchases } = useInventoryPurchases();
+  const { batches } = useInventoryBatches();
 
   if (isMobile) return <InventoryHome />;
 
-  const base = isDirector ? '/director/inventory' : '/inventory';
+  // No route is ever mounted at bare '/inventory' — only /director/inventory
+  // and /guard/inventory exist (App.tsx).
+  const base = isDirector ? '/director/inventory' : '/guard/inventory';
   const lowStock = stock.filter((s) => s.minStock !== undefined && s.availableQty <= s.minStock);
   const pendingApproval = requests.filter((r) => r.status === 'Submitted');
   const myPending = requests.filter((r) => r.status === 'Draft' || r.status === 'Submitted' || r.status === 'Approved' || r.status === 'PartiallyApproved');
+  const expiringSoon = batches.filter((b) => b.remainingQty > 0 && b.expiryDate && daysUntilExpiry(b.expiryDate) <= 30);
 
   return (
     <Page className="space-y-6">
@@ -47,14 +56,26 @@ export default function InventoryDashboard() {
             <Metric label="Low stock items" value={lowStock.length} tone={lowStock.length > 0 ? 'red' : 'default'} onClick={() => navigate(`${base}/stock`)} />
             <Metric label="Awaiting approval" value={pendingApproval.length} tone={pendingApproval.length > 0 ? 'amber' : 'default'} onClick={() => navigate(`${base}/requests`)} />
             <Metric label="Total requests" value={requests.length} onClick={() => navigate(`${base}/requests`)} />
+            <Metric label="Purchases" value={purchases.length} onClick={() => navigate(`${base}/purchases`)} />
+            <Metric label="Expiring within 30d" value={expiringSoon.length} tone={expiringSoon.length > 0 ? 'amber' : 'default'} onClick={() => navigate(`${base}/reports`)} />
           </>
         ) : (
           <>
             <Metric label="Low stock items" value={lowStock.length} tone={lowStock.length > 0 ? 'red' : 'default'} onClick={() => navigate(`${base}/stock`)} />
             <Metric label="My open requests" value={myPending.length} tone={myPending.length > 0 ? 'amber' : 'default'} onClick={() => navigate(`${base}/requests`)} />
+            <Metric label="Purchases" value={purchases.length} onClick={() => navigate(`${base}/purchases`)} />
+            <Metric label="Expiring within 30d" value={expiringSoon.length} tone={expiringSoon.length > 0 ? 'amber' : 'default'} onClick={() => navigate(`${base}/reports`)} />
           </>
         )}
       </div>
+
+      <button
+        onClick={() => navigate(`${base}/reports`)}
+        className="w-full flex items-center justify-between gap-3 card px-4 py-3 text-left hover:bg-n-10 transition-colors"
+      >
+        <span className="flex items-center gap-2 text-13 font-semibold text-n-100"><FileBarChart className="w-4 h-4 text-n-70" />Inventory reports</span>
+        <ChevronRight className="w-4 h-4 text-n-50" />
+      </button>
 
       {isDirector && pendingApproval.length > 0 && (
         <section>

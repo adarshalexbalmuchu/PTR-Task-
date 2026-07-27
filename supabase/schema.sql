@@ -2399,6 +2399,458 @@ insert into inventory_categories (name) values
 on conflict (name) do nothing;
 
 -- ═════════════════════════════════════════════
+-- Hospitality Inventory Management module — Phase 2
+-- (Procurement + batch/expiry tracking + reports)
+--
+-- Adds the two data sources the Phase 1 comment above named as still
+-- missing, plus the reports that depend on them: purchases (procurement)
+-- and per-batch expiry tracking. Transfers, true point-of-use consumption/
+-- return/damage recording, and offline drafts remain out of scope for this
+-- phase — still reserved by inventory_transactions.source_location_id/
+-- destination_location_id and the inventory_transaction_type comment below.
+-- ═════════════════════════════════════════════
+
+-- Only the value Phase 2 actually produces. transfer/consumption/return/
+-- damage/adjustment are added the same way when those later phases land.
+alter type inventory_transaction_type add value if not exists 'purchase_receipt';
+commit;
+
+create table if not exists inventory_purchases (
+  id             uuid primary key default uuid_generate_v4(),
+  location_id    uuid not null references inventory_locations(id) on delete restrict,
+  supplier_name  text not null default '',
+  invoice_number text,
+  purchase_date  date not null,
+  notes          text not null default '',
+  created_by     uuid not null references profiles(id) on delete restrict,
+  created_at     timestamptz not null default now()
+);
+
+-- Optional client-supplied idempotency key, same convention/purpose as
+-- inventory_transactions.idempotency_key — a retried post_inventory_purchase
+-- call after a perceived timeout must not double-post a whole purchase.
+alter table inventory_purchases add column if not exists idempotency_key uuid;
+create unique index if not exists inventory_purchases_idempotency_key_uniq
+  on inventory_purchases(idempotency_key) where idempotency_key is not null;
+
+do $$ begin
+  alter table inventory_purchases add constraint inventory_purchases_supplier_len check (char_length(supplier_name) <= 200);
+exception when duplicate_object then null; end $$;
+
+-- Same pattern as inventory_request_id on this table (Phase 1): a nullable
+-- FK so logInventoryAction() can attribute a purchase-recording entry to
+-- the actual purchase row, not just free-text detail.
+alter table audit_log add column if not exists inventory_purchase_id uuid references inventory_purchases(id) on delete set null;
+create index if not exists audit_log_inventory_purchase_id_idx on audit_log(inventory_purchase_id) where inventory_purchase_id is not null;
+
+-- No unique(purchase_id, item_id): unlike a request, a single delivery can
+-- legitimately contain the same item twice under two different batches/
+-- expiry dates (e.g. topping up an existing batch plus a fresh one in the
+-- same drop).
+create table if not exists inventory_purchase_items (
+  id           uuid primary key default uuid_generate_v4(),
+  purchase_id  uuid not null references inventory_purchases(id) on delete cascade,
+  item_id      uuid not null references inventory_items(id) on delete restrict,
+  quantity     numeric not null check (quantity > 0),
+  unit_cost    numeric check (unit_cost is null or unit_cost >= 0),
+  batch_number text,
+  expiry_date  date,
+  notes        text not null default ''
+);
+
+-- Per-batch remaining quantity, populated only for items with
+-- track_batch/track_expiry (inventory_items) — items that don't opt into
+-- batch tracking keep flowing straight into the aggregate inventory_stock
+-- row only, same as Phase 1. issue_inventory_stock (redeployed below)
+-- depletes these FEFO (soonest expiry first) when they exist.
+create table if not exists inventory_batches (
+  id                 uuid primary key default uuid_generate_v4(),
+  item_id            uuid not null references inventory_items(id) on delete restrict,
+  location_id        uuid not null references inventory_locations(id) on delete restrict,
+  batch_number       text,
+  expiry_date        date,
+  received_qty       numeric not null check (received_qty > 0),
+  remaining_qty      numeric not null check (remaining_qty >= 0),
+  source_purchase_id uuid references inventory_purchases(id) on delete set null,
+  created_at         timestamptz not null default now()
+);
+
+create index if not exists inventory_purchases_location_id_idx on inventory_purchases(location_id);
+create index if not exists inventory_purchase_items_purchase_id_idx on inventory_purchase_items(purchase_id);
+create index if not exists inventory_batches_item_location_idx on inventory_batches(item_id, location_id);
+create index if not exists inventory_batches_expiry_idx on inventory_batches(expiry_date) where remaining_qty > 0;
+
+-- ─────────────────────────────────────────────
+-- Phase 2 RLS — same shape as inventory_stock/inventory_transactions:
+-- director full read, location staff read-only via
+-- get_my_inventory_location_ids(). No insert/update/delete policy on any
+-- of the three tables — all writes happen inside post_inventory_purchase
+-- (SECURITY DEFINER), same discipline as the immutable ledger.
+-- ─────────────────────────────────────────────
+alter table inventory_purchases enable row level security;
+alter table inventory_purchase_items enable row level security;
+alter table inventory_batches enable row level security;
+
+drop policy if exists "inventory_purchases_director" on inventory_purchases;
+create policy "inventory_purchases_director" on inventory_purchases
+  for select using ((select get_my_role()) = 'director');
+drop policy if exists "inventory_purchases_staff_read" on inventory_purchases;
+create policy "inventory_purchases_staff_read" on inventory_purchases
+  for select using (location_id = any ((select get_my_inventory_location_ids())::uuid[]));
+
+drop policy if exists "inventory_purchase_items_director" on inventory_purchase_items;
+create policy "inventory_purchase_items_director" on inventory_purchase_items
+  for select using ((select get_my_role()) = 'director');
+drop policy if exists "inventory_purchase_items_staff_read" on inventory_purchase_items;
+create policy "inventory_purchase_items_staff_read" on inventory_purchase_items
+  for select using (
+    exists (
+      select 1 from inventory_purchases p
+      where p.id = inventory_purchase_items.purchase_id
+        and p.location_id = any ((select get_my_inventory_location_ids())::uuid[])
+    )
+  );
+
+drop policy if exists "inventory_batches_director" on inventory_batches;
+create policy "inventory_batches_director" on inventory_batches
+  for select using ((select get_my_role()) = 'director');
+drop policy if exists "inventory_batches_staff_read" on inventory_batches;
+create policy "inventory_batches_staff_read" on inventory_batches
+  for select using (location_id = any ((select get_my_inventory_location_ids())::uuid[]));
+
+-- ─────────────────────────────────────────────
+-- post_inventory_purchase — records a delivery: one purchase header, one
+-- row per line item, an inventory_transactions ledger entry per line
+-- (transaction_type = 'purchase_receipt'), and — only for items with
+-- track_batch/track_expiry — one inventory_batches row per line. Modeled
+-- directly on post_opening_balance (same upsert-then-lock-then-add stock
+-- pattern, same idempotency-key convention) but callable by location staff
+-- (like issue_inventory_stock), not director-only — recording a delivery
+-- is a routine location-level action, unlike posting a system opening
+-- balance.
+-- p_items shape: [{"item_id":uuid,"quantity":numeric,"unit_cost":numeric|null,
+--                   "batch_number":text|null,"expiry_date":"YYYY-MM-DD"|null}, ...]
+-- ─────────────────────────────────────────────
+-- Returns the new purchase's id, or null if a retried call with the same
+-- p_idempotency_key was recognized as a duplicate and safely skipped (a
+-- uuid return, not boolean, since — unlike post_opening_balance/
+-- issue_inventory_stock, which mutate a row the caller already knows the
+-- id of — this RPC creates a brand-new inventory_purchases row, and the
+-- caller needs its id back to attribute the audit-log entry to it).
+create or replace function post_inventory_purchase(
+  p_location_id uuid,
+  p_supplier_name text,
+  p_invoice_number text,
+  p_purchase_date date,
+  p_notes text,
+  p_items jsonb,
+  p_idempotency_key uuid default null
+) returns uuid language plpgsql security definer set search_path = '' as $$
+declare
+  uid uuid := (select auth.uid());
+  caller_role public.user_role;
+  v_purchase_id uuid;
+  v_item jsonb;
+  v_item_id uuid;
+  v_quantity numeric;
+  v_unit_cost numeric;
+  v_batch_number text;
+  v_expiry_date date;
+  v_item_active boolean;
+  v_track_batch boolean;
+  v_track_expiry boolean;
+  prev numeric;
+begin
+  if uid is null then raise exception 'Not authenticated'; end if;
+
+  if p_idempotency_key is not null and exists (
+    select 1 from public.inventory_purchases where idempotency_key = p_idempotency_key
+  ) then
+    return null;
+  end if;
+
+  caller_role := public.get_my_role();
+  if caller_role is distinct from 'director' and not exists (
+    select 1 from public.inventory_location_staff
+      where location_id = p_location_id and user_id = uid and active
+  ) then
+    raise exception 'You are not assigned to this location';
+  end if;
+
+  if p_purchase_date is null then raise exception 'Purchase date is required'; end if;
+  if jsonb_array_length(coalesce(p_items, '[]'::jsonb)) = 0 then
+    raise exception 'A purchase must have at least one item';
+  end if;
+
+  insert into public.inventory_purchases
+    (location_id, supplier_name, invoice_number, purchase_date, notes, created_by, idempotency_key)
+  values
+    (p_location_id, coalesce(p_supplier_name, ''), p_invoice_number, p_purchase_date, coalesce(p_notes, ''), uid, p_idempotency_key)
+  returning id into v_purchase_id;
+
+  for v_item in select * from jsonb_array_elements(p_items)
+  loop
+    v_item_id := (v_item ->> 'item_id')::uuid;
+    v_quantity := (v_item ->> 'quantity')::numeric;
+    v_unit_cost := nullif(v_item ->> 'unit_cost', '')::numeric;
+    v_batch_number := nullif(v_item ->> 'batch_number', '');
+    v_expiry_date := nullif(v_item ->> 'expiry_date', '')::date;
+
+    if v_quantity is null or v_quantity <= 0 then
+      raise exception 'Each purchase line must have a positive quantity';
+    end if;
+
+    select active, track_batch, track_expiry into v_item_active, v_track_batch, v_track_expiry
+      from public.inventory_items where id = v_item_id;
+    if v_item_active is not true then
+      raise exception 'Cannot record a purchase for an inactive item';
+    end if;
+
+    insert into public.inventory_stock (item_id, location_id, available_qty)
+      values (v_item_id, p_location_id, 0)
+    on conflict (item_id, location_id) do nothing;
+
+    select available_qty into prev from public.inventory_stock
+      where item_id = v_item_id and location_id = p_location_id
+      for update;
+
+    update public.inventory_stock
+      set available_qty = prev + v_quantity, updated_at = now()
+      where item_id = v_item_id and location_id = p_location_id;
+
+    insert into public.inventory_transactions
+      (item_id, location_id, quantity, transaction_type, related_request_id, performed_by, notes, previous_balance, new_balance)
+    values
+      (v_item_id, p_location_id, v_quantity, 'purchase_receipt', null, uid, p_notes, prev, prev + v_quantity);
+
+    insert into public.inventory_purchase_items
+      (purchase_id, item_id, quantity, unit_cost, batch_number, expiry_date, notes)
+    values
+      (v_purchase_id, v_item_id, v_quantity, v_unit_cost, v_batch_number, v_expiry_date, '');
+
+    if v_track_batch or v_track_expiry then
+      insert into public.inventory_batches
+        (item_id, location_id, batch_number, expiry_date, received_qty, remaining_qty, source_purchase_id)
+      values
+        (v_item_id, p_location_id, v_batch_number, v_expiry_date, v_quantity, v_quantity, v_purchase_id);
+    end if;
+  end loop;
+
+  return v_purchase_id;
+end;
+$$;
+revoke all on function post_inventory_purchase(uuid, text, text, date, text, jsonb, uuid) from public;
+revoke execute on function post_inventory_purchase(uuid, text, text, date, text, jsonb, uuid) from anon;
+grant execute on function post_inventory_purchase(uuid, text, text, date, text, jsonb, uuid) to authenticated;
+
+-- Bug found writing the Phase 2 test suite (never previously exercised —
+-- Phase 1 shipped with zero inventory test coverage): issue_inventory_stock
+-- is deliberately callable by a non-director assigned location guard, but
+-- its own internal updates to inventory_request_items.fulfilled_qty and
+-- inventory_requests.status are guarded by these two triggers below, which
+-- block exactly that for any non-director caller. SECURITY DEFINER does
+-- NOT make a function's writes trusted here — that only exempts *table
+-- grants*/RLS (the table owner bypasses RLS), not a plpgsql trigger's own
+-- get_my_role() check, which still resolves the real calling session's
+-- role regardless of nesting. The schema comment on the original triggers
+-- (Phase 1) claiming approve/reject_inventory_request "bypass this
+-- trigger... by running as the table owner" was really just describing
+-- that those two RPCs happen to already be director-only at their own top
+-- level, not an actual bypass mechanism — issue_inventory_stock has no
+-- such luck, since it's intentionally non-director-callable. Net effect in
+-- production: no non-director staff member could ever successfully
+-- complete an "issue stock" call — the RPC silently failed on its own
+-- second write, after already decrementing inventory_stock, for anyone but
+-- a director.
+--
+-- Fix: a transaction-local trusted flag, set only for the instant around
+-- each of the two guarded writes, inside the one RPC intentionally allowed
+-- to make them non-director. A direct client UPDATE (bypassing the RPC)
+-- never sets this flag, so it's still blocked exactly as before — this
+-- narrows the trigger's exemption to "written by this specific already-
+-- self-authorizing RPC," not "any write in any transaction."
+create or replace function enforce_inventory_request_staff_update()
+returns trigger language plpgsql
+set search_path = '' as $$
+begin
+  if public.get_my_role() <> 'director'
+     and coalesce(current_setting('app.inventory_rpc_trusted', true), 'false') <> 'true' then
+    if new.status not in ('Draft', 'Submitted', 'Cancelled') then
+      raise exception 'Only a director can approve, reject, or fulfil a request';
+    end if;
+    if new.reject_reason is distinct from old.reject_reason then
+      raise exception 'Only a director can set a rejection reason';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+create or replace function enforce_inventory_request_item_staff_update()
+returns trigger language plpgsql
+set search_path = '' as $$
+begin
+  if public.get_my_role() <> 'director'
+     and coalesce(current_setting('app.inventory_rpc_trusted', true), 'false') <> 'true'
+     and (new.approved_qty is distinct from old.approved_qty
+          or new.fulfilled_qty is distinct from old.fulfilled_qty) then
+    raise exception 'Only a director can set approved/fulfilled quantities';
+  end if;
+  return new;
+end;
+$$;
+
+-- Re-deploy with FEFO batch depletion added and the trusted-flag bracket
+-- around its two guarded writes (see comment above) — everything else is
+-- byte-identical to the Phase 1 version.
+create or replace function issue_inventory_stock(
+  p_request_item_id uuid,
+  p_location_id uuid,
+  p_quantity numeric,
+  p_notes text default '',
+  p_idempotency_key uuid default null
+) returns boolean language plpgsql security definer set search_path = '' as $$
+declare
+  uid uuid := (select auth.uid());
+  caller_role public.user_role;
+  ritem record;
+  prev numeric;
+  new_fulfilled numeric;
+  all_done boolean;
+  any_done boolean;
+begin
+  if uid is null then raise exception 'Not authenticated'; end if;
+
+  if p_idempotency_key is not null and exists (
+    select 1 from public.inventory_transactions where idempotency_key = p_idempotency_key
+  ) then
+    return false;
+  end if;
+
+  caller_role := public.get_my_role();
+
+  select ri.*, r.status as request_status, r.requesting_location_id
+    into ritem
+    from public.inventory_request_items ri
+    join public.inventory_requests r on r.id = ri.request_id
+    where ri.id = p_request_item_id;
+  if not found then raise exception 'Request line not found'; end if;
+  if ritem.request_status not in ('Approved', 'PartiallyApproved', 'PartiallyFulfilled') then
+    raise exception 'Request must be approved before stock can be issued';
+  end if;
+
+  if caller_role is distinct from 'director' and not exists (
+    select 1 from public.inventory_location_staff
+      where location_id = p_location_id and user_id = uid
+  ) then
+    raise exception 'You are not assigned to this location';
+  end if;
+
+  if p_quantity <= 0 then raise exception 'Quantity must be positive'; end if;
+  if ritem.fulfilled_qty + p_quantity > coalesce(ritem.approved_qty, 0) then
+    raise exception 'Cannot issue more than the approved quantity';
+  end if;
+
+  select available_qty into prev from public.inventory_stock
+    where item_id = ritem.item_id and location_id = p_location_id
+    for update;
+  if prev is null or prev < p_quantity then
+    raise exception 'Insufficient stock at this location';
+  end if;
+
+  update public.inventory_stock
+    set available_qty = prev - p_quantity, updated_at = now()
+    where item_id = ritem.item_id and location_id = p_location_id;
+
+  -- FEFO batch depletion (Phase 2): only when the item opts into batch/
+  -- expiry tracking AND already has at least one batch row here — an item
+  -- flagged track_batch/track_expiry with zero batch rows predates Phase 2
+  -- (its stock was posted before batching existed), so it silently falls
+  -- back to aggregate-only, same as before this phase. Batches are
+  -- depleted soonest-expiry-first; if they under-cover the issued quantity
+  -- (drift between the aggregate and the batch breakdown), depletion is
+  -- clamped at zero rather than raising — a data-hygiene gap here must not
+  -- block a routine issue that the aggregate stock check above already
+  -- proved is valid.
+  if exists (
+    select 1 from public.inventory_items
+      where id = ritem.item_id and (track_batch or track_expiry)
+  ) and exists (
+    select 1 from public.inventory_batches
+      where item_id = ritem.item_id and location_id = p_location_id
+  ) then
+    declare
+      v_remaining_to_deplete numeric := p_quantity;
+      v_batch record;
+      v_take numeric;
+    begin
+      for v_batch in
+        select id, remaining_qty from public.inventory_batches
+          where item_id = ritem.item_id and location_id = p_location_id and remaining_qty > 0
+          order by expiry_date asc nulls last, created_at asc
+          for update
+      loop
+        exit when v_remaining_to_deplete <= 0;
+        v_take := least(v_batch.remaining_qty, v_remaining_to_deplete);
+        update public.inventory_batches set remaining_qty = remaining_qty - v_take where id = v_batch.id;
+        v_remaining_to_deplete := v_remaining_to_deplete - v_take;
+      end loop;
+    end;
+  end if;
+
+  insert into public.inventory_transactions
+    (item_id, location_id, quantity, transaction_type, related_request_id, performed_by, approved_by, notes, previous_balance, new_balance, idempotency_key)
+  values
+    (ritem.item_id, p_location_id, p_quantity, 'issued', ritem.request_id, uid, uid, p_notes, prev, prev - p_quantity, p_idempotency_key);
+
+  new_fulfilled := ritem.fulfilled_qty + p_quantity;
+  -- Trusted-flag bracket (see the redeploy comment above the two trigger
+  -- functions preceding this one) — narrowly scoped to just these two
+  -- writes, cleared immediately after, so nothing else in the caller's
+  -- transaction is ever treated as trusted.
+  perform set_config('app.inventory_rpc_trusted', 'true', true);
+  update public.inventory_request_items set fulfilled_qty = new_fulfilled where id = p_request_item_id;
+
+  select bool_and(fulfilled_qty >= coalesce(approved_qty, requested_qty)),
+         bool_or(fulfilled_qty > 0)
+    into all_done, any_done
+    from public.inventory_request_items where request_id = ritem.request_id;
+
+  update public.inventory_requests
+    set status = case when all_done then 'Fulfilled' when any_done then 'PartiallyFulfilled' else status end,
+        updated_at = now()
+    where id = ritem.request_id;
+  perform set_config('app.inventory_rpc_trusted', 'false', true);
+
+  return true;
+end;
+$$;
+revoke all on function issue_inventory_stock(uuid, uuid, numeric, text, uuid) from public;
+revoke execute on function issue_inventory_stock(uuid, uuid, numeric, text, uuid) from anon;
+grant execute on function issue_inventory_stock(uuid, uuid, numeric, text, uuid) to authenticated;
+
+-- ─────────────────────────────────────────────
+-- Reports: issuance-trend aggregate view. security_invoker = true so RLS on
+-- the underlying inventory_transactions applies as the querying user, same
+-- reasoning as task_dashboard_stats above. Named "issued", not
+-- "consumption": Phase 1/2 only track stock leaving central inventory for
+-- a location, not final point-of-use consumption at that location (that's
+-- a separately-reserved later phase) — the UI must label this honestly.
+-- ─────────────────────────────────────────────
+create or replace view inventory_issued_monthly
+  with (security_invoker = true) as
+  select
+    item_id,
+    location_id,
+    date_trunc('month', created_at)::date as month,
+    sum(quantity) as issued_qty
+  from inventory_transactions
+  where transaction_type = 'issued'
+  group by item_id, location_id, date_trunc('month', created_at);
+
+grant select on inventory_issued_monthly to authenticated;
+
+-- ═════════════════════════════════════════════
 -- Task Groups & Recurring Assignments — Phase 1
 -- ═════════════════════════════════════════════
 -- Persistent group layer on top of the existing tasks table. Additive

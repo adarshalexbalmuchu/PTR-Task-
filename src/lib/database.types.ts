@@ -10,7 +10,7 @@ export type IncidentSeverity = 'Low' | 'Medium' | 'High' | 'Critical';
 export type IncidentStatus = 'Open' | 'Resolved';
 export type InventoryLocationType = 'central_warehouse' | 'range_store' | 'forest_office' | 'resort' | 'hotel' | 'guest_house' | 'kitchen' | 'housekeeping_store' | 'other_facility';
 export type InventoryItemKind = 'consumable' | 'reusable';
-export type InventoryTransactionType = 'opening_balance' | 'issued';
+export type InventoryTransactionType = 'opening_balance' | 'issued' | 'purchase_receipt';
 export type InventoryRequestStatus = 'Draft' | 'Submitted' | 'Approved' | 'PartiallyApproved' | 'Rejected' | 'PartiallyFulfilled' | 'Fulfilled' | 'Cancelled';
 export type TaskGroupType = 'permanent' | 'temporary';
 export type TaskGroupStatus = 'active' | 'paused' | 'archived';
@@ -485,6 +485,7 @@ export interface Database {
           inventory_item_id: string | null;
           inventory_transaction_id: string | null;
           inventory_request_id: string | null;
+          inventory_purchase_id: string | null;
           created_at: string;
         };
         Insert: {
@@ -498,6 +499,7 @@ export interface Database {
           inventory_item_id?: string | null;
           inventory_transaction_id?: string | null;
           inventory_request_id?: string | null;
+          inventory_purchase_id?: string | null;
         };
         Update: {
           id?: string;
@@ -510,6 +512,7 @@ export interface Database {
           inventory_item_id?: string | null;
           inventory_transaction_id?: string | null;
           inventory_request_id?: string | null;
+          inventory_purchase_id?: string | null;
         };
         Relationships: Relationships;
       };
@@ -780,6 +783,107 @@ export interface Database {
         };
         Relationships: Relationships;
       };
+      inventory_purchases: {
+        Row: {
+          id: string;
+          location_id: string;
+          supplier_name: string;
+          invoice_number: string | null;
+          purchase_date: string;
+          notes: string;
+          created_by: string;
+          idempotency_key: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          location_id: string;
+          supplier_name?: string;
+          invoice_number?: string | null;
+          purchase_date: string;
+          notes?: string;
+          created_by: string;
+          idempotency_key?: string | null;
+        };
+        Update: {
+          id?: string;
+          location_id?: string;
+          supplier_name?: string;
+          invoice_number?: string | null;
+          purchase_date?: string;
+          notes?: string;
+          created_by?: string;
+          idempotency_key?: string | null;
+        };
+        Relationships: Relationships;
+      };
+      inventory_purchase_items: {
+        Row: {
+          id: string;
+          purchase_id: string;
+          item_id: string;
+          quantity: number;
+          unit_cost: number | null;
+          batch_number: string | null;
+          expiry_date: string | null;
+          notes: string;
+        };
+        Insert: {
+          id?: string;
+          purchase_id: string;
+          item_id: string;
+          quantity: number;
+          unit_cost?: number | null;
+          batch_number?: string | null;
+          expiry_date?: string | null;
+          notes?: string;
+        };
+        Update: {
+          id?: string;
+          purchase_id?: string;
+          item_id?: string;
+          quantity?: number;
+          unit_cost?: number | null;
+          batch_number?: string | null;
+          expiry_date?: string | null;
+          notes?: string;
+        };
+        Relationships: Relationships;
+      };
+      inventory_batches: {
+        Row: {
+          id: string;
+          item_id: string;
+          location_id: string;
+          batch_number: string | null;
+          expiry_date: string | null;
+          received_qty: number;
+          remaining_qty: number;
+          source_purchase_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          item_id: string;
+          location_id: string;
+          batch_number?: string | null;
+          expiry_date?: string | null;
+          received_qty: number;
+          remaining_qty?: number;
+          source_purchase_id?: string | null;
+        };
+        Update: {
+          id?: string;
+          item_id?: string;
+          location_id?: string;
+          batch_number?: string | null;
+          expiry_date?: string | null;
+          received_qty?: number;
+          remaining_qty?: number;
+          source_purchase_id?: string | null;
+        };
+        Relationships: Relationships;
+      };
       task_groups: {
         Row: {
           id: string;
@@ -1037,6 +1141,15 @@ export interface Database {
           archived_count: number;
           completed: number;
           overdue: number;
+        };
+        Relationships: Relationships;
+      };
+      inventory_issued_monthly: {
+        Row: {
+          item_id: string;
+          location_id: string;
+          month: string;
+          issued_qty: number;
         };
         Relationships: Relationships;
       };

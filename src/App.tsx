@@ -45,6 +45,7 @@ const InventoryLocations = lazy(() => import('./pages/inventory/Locations'));
 const InventoryStock = lazy(() => import('./pages/inventory/Stock'));
 const InventoryRequests = lazy(() => import('./pages/inventory/Requests'));
 const InventoryRequestDetail = lazy(() => import('./pages/inventory/RequestDetail'));
+const InventoryPurchases = lazy(() => import('./pages/inventory/Purchases'));
 const InventoryTransactions = lazy(() => import('./pages/inventory/Transactions'));
 const InventoryReports = lazy(() => import('./pages/inventory/Reports'));
 const InventoryManagers = lazy(() => import('./pages/inventory/Managers'));
@@ -208,6 +209,7 @@ export default function App() {
               <Route path="inventory/stock" element={<InventoryStock />} />
               <Route path="inventory/requests" element={<InventoryRequests />} />
               <Route path="inventory/requests/:id" element={<InventoryRequestDetail />} />
+              <Route path="inventory/purchases" element={<InventoryPurchases />} />
               <Route path="inventory/transactions" element={<InventoryTransactions />} />
               <Route path="inventory/reports" element={<InventoryReports />} />
               <Route path="inventory/managers" element={<InventoryManagers />} />
@@ -269,7 +271,9 @@ export default function App() {
                 <Route path="stock" element={<InventoryStock />} />
                 <Route path="requests" element={<InventoryRequests />} />
                 <Route path="requests/:id" element={<InventoryRequestDetail />} />
+                <Route path="purchases" element={<InventoryPurchases />} />
                 <Route path="transactions" element={<InventoryTransactions />} />
+                <Route path="reports" element={<InventoryReports />} />
               </Route>
             </Route>
 

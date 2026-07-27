@@ -327,6 +327,51 @@ export interface InventoryRequest {
 }
 
 // ─────────────────────────────────────────────
+// Hospitality Inventory Management — Phase 2 (procurement + batch/expiry)
+// ─────────────────────────────────────────────
+
+export interface InventoryPurchaseItem {
+  id: string;
+  purchaseId: string;
+  itemId: string;
+  itemName?: string;
+  unitAbbreviation?: string;
+  quantity: number;
+  unitCost?: number;
+  batchNumber?: string;
+  expiryDate?: string;
+  notes: string;
+}
+
+export interface InventoryPurchase {
+  id: string;
+  locationId: string;
+  locationName?: string;
+  supplierName: string;
+  invoiceNumber?: string;
+  purchaseDate: string;
+  notes: string;
+  createdBy: string;
+  createdByName?: string;
+  items: InventoryPurchaseItem[];
+  createdAt: string;
+}
+
+export interface InventoryBatch {
+  id: string;
+  itemId: string;
+  itemName?: string;
+  locationId: string;
+  locationName?: string;
+  batchNumber?: string;
+  expiryDate?: string;
+  receivedQty: number;
+  remainingQty: number;
+  sourcePurchaseId?: string;
+  createdAt: string;
+}
+
+// ─────────────────────────────────────────────
 // Task Groups & Recurring Assignments (Phase 1)
 // ─────────────────────────────────────────────
 // A persistent, reusable team — distinct from batch_id (which only ever

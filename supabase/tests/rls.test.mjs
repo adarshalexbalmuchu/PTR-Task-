@@ -648,6 +648,174 @@ async function run() {
     }
   }
 
+  // ── Inventory (Phase 2: procurement + batch/expiry tracking) ──────────
+  // Seed: a fresh "Test Depot" location with guardBetla as its only active
+  // staff assignment (guardKechki has none — used for the permission-
+  // rejection check). Three items: a plain one (no batch/expiry tracking),
+  // one that tracks both (used for the FEFO depletion test), and one
+  // flagged track_batch/track_expiry but stocked via post_opening_balance
+  // instead of a purchase, to simulate stock that predates batching (the
+  // "zero existing batch rows" fallback path in issue_inventory_stock).
+  {
+    const client = new Client(CONN);
+    await client.connect();
+    const setUser = (uid) => client.query(`SET LOCAL ROLE authenticated; SET LOCAL app.uid = '${uid}'`);
+    let spCounter = 0;
+    const expectErrorSp = async (fn) => {
+      const sp = `sp_inv_${spCounter++}`;
+      await client.query(`SAVEPOINT ${sp}`);
+      try {
+        await fn();
+        await client.query(`RELEASE SAVEPOINT ${sp}`);
+        return null;
+      } catch (e) {
+        await client.query(`ROLLBACK TO SAVEPOINT ${sp}`);
+        return e.message;
+      }
+    };
+    try {
+      await client.query('BEGIN');
+
+      // Seeded as the plain (superuser) connection, before the first
+      // SET LOCAL ROLE — RLS doesn't apply to this setup, same as the
+      // storage.objects seed block above.
+      const categoryId = (await client.query(`select id from inventory_categories where name = 'Toiletries'`)).rows[0].id;
+      const unitId = (await client.query(`select id from inventory_units where name = 'Piece'`)).rows[0].id;
+      const locId = (await client.query(
+        `insert into inventory_locations (name, type, range_id) values ('Test Depot', 'range_store', $1) returning id`,
+        [R.betla],
+      )).rows[0].id;
+      await client.query(
+        `insert into inventory_location_staff (location_id, user_id, active) values ($1, $2, true)`,
+        [locId, U.guardBetla],
+      );
+      const soapId = (await client.query(
+        `insert into inventory_items (name, category_id, unit_id, track_batch, track_expiry) values ('Test Soap', $1, $2, false, false) returning id`,
+        [categoryId, unitId],
+      )).rows[0].id;
+      const vaccineId = (await client.query(
+        `insert into inventory_items (name, category_id, unit_id, track_batch, track_expiry) values ('Test Vaccine', $1, $2, true, true) returning id`,
+        [categoryId, unitId],
+      )).rows[0].id;
+      const legacyId = (await client.query(
+        `insert into inventory_items (name, category_id, unit_id, track_batch, track_expiry) values ('Test Legacy Med', $1, $2, true, true) returning id`,
+        [categoryId, unitId],
+      )).rows[0].id;
+
+      // 56. A guard with no assignment at this location is rejected.
+      await setUser(U.guardKechki);
+      const unassignedErr = await expectErrorSp(() =>
+        client.query(
+          `select post_inventory_purchase($1, 'Acme', null, current_date, '', $2::jsonb, null) as id`,
+          [locId, JSON.stringify([{ item_id: soapId, quantity: 5 }])],
+        ),
+      );
+      check('post_inventory_purchase rejects a guard not assigned to the location', unassignedErr !== null, unassignedErr ?? 'no error raised');
+
+      // 57. Director posts a purchase of the plain item; returns a real id,
+      // stock/ledger update correctly, and — since the item doesn't track
+      // batch/expiry — no batch row is created.
+      await setUser(U.director);
+      const soapKey = '11111111-1111-1111-1111-111111111111';
+      const soapPurchase = await client.query(
+        `select post_inventory_purchase($1, 'Acme', 'INV-1', current_date, '', $2::jsonb, $3) as id`,
+        [locId, JSON.stringify([{ item_id: soapId, quantity: 10 }]), soapKey],
+      );
+      check('post_inventory_purchase returns a new purchase id', !!soapPurchase.rows[0].id);
+      const soapStock1 = await client.query(`select available_qty from inventory_stock where item_id = $1 and location_id = $2`, [soapId, locId]);
+      check('stock increases by the purchased quantity', Number(soapStock1.rows[0].available_qty) === 10, JSON.stringify(soapStock1.rows));
+      const soapTxn = await client.query(`select transaction_type, previous_balance, new_balance from inventory_transactions where item_id = $1 and location_id = $2`, [soapId, locId]);
+      check('a purchase_receipt ledger row is written with correct before/after balances', soapTxn.rows.length === 1 && soapTxn.rows[0].transaction_type === 'purchase_receipt' && Number(soapTxn.rows[0].previous_balance) === 0 && Number(soapTxn.rows[0].new_balance) === 10, JSON.stringify(soapTxn.rows));
+      const soapBatches = await client.query(`select id from inventory_batches where item_id = $1`, [soapId]);
+      check('no batch row is created for an item that does not track batch/expiry', soapBatches.rows.length === 0, JSON.stringify(soapBatches.rows));
+
+      // 58. A retried call with the same idempotency key is a no-op.
+      const soapRetry = await client.query(
+        `select post_inventory_purchase($1, 'Acme', 'INV-1', current_date, '', $2::jsonb, $3) as id`,
+        [locId, JSON.stringify([{ item_id: soapId, quantity: 10 }]), soapKey],
+      );
+      check('a retried purchase with the same idempotency key returns null', soapRetry.rows[0].id === null, JSON.stringify(soapRetry.rows));
+      const soapStock2 = await client.query(`select available_qty from inventory_stock where item_id = $1 and location_id = $2`, [soapId, locId]);
+      check('the deduped retry does not double-post the stock increase', Number(soapStock2.rows[0].available_qty) === 10, JSON.stringify(soapStock2.rows));
+
+      // 59-60. Two purchases of the batch/expiry-tracked item, from two
+      // different (both authorized) callers, at two different expiry
+      // dates — sets up the FEFO depletion check below.
+      const earlyExpiry = (await client.query(`select (current_date + 10)::text as d`)).rows[0].d;
+      const lateExpiry = (await client.query(`select (current_date + 30)::text as d`)).rows[0].d;
+      const earlyPurchase = await client.query(
+        `select post_inventory_purchase($1, 'Acme', 'INV-2', current_date, '', $2::jsonb, null) as id`,
+        [locId, JSON.stringify([{ item_id: vaccineId, quantity: 5, batch_number: 'B-EARLY', expiry_date: earlyExpiry }])],
+      );
+      check('purchase of a batch-tracked item succeeds', !!earlyPurchase.rows[0].id);
+      await setUser(U.guardBetla);
+      const latePurchase = await client.query(
+        `select post_inventory_purchase($1, 'Acme', 'INV-3', current_date, '', $2::jsonb, null) as id`,
+        [locId, JSON.stringify([{ item_id: vaccineId, quantity: 5, batch_number: 'B-LATE', expiry_date: lateExpiry }])],
+      );
+      check('an assigned (non-director) staff member can also post a purchase', !!latePurchase.rows[0].id);
+
+      const vaccineBatches = await client.query(`select batch_number, remaining_qty, expiry_date from inventory_batches where item_id = $1 order by expiry_date`, [vaccineId]);
+      check('two batch rows exist, one per purchase, with the right expiry ordering', vaccineBatches.rows.length === 2 && vaccineBatches.rows[0].batch_number === 'B-EARLY' && vaccineBatches.rows[1].batch_number === 'B-LATE', JSON.stringify(vaccineBatches.rows));
+
+      // 61. Issue 8 of the 10 total — should fully deplete B-EARLY (5) and
+      // take 3 from B-LATE (leaving 2), FEFO.
+      await setUser(U.director);
+      const vaccineReqId = (await client.query(
+        `select create_inventory_request($1, $2::jsonb, null, 'Medium', 'FEFO test') as id`,
+        [locId, JSON.stringify([{ item_id: vaccineId, requested_qty: 8 }])],
+      )).rows[0].id;
+      await client.query(`update inventory_requests set status = 'Submitted' where id = $1`, [vaccineReqId]);
+      const vaccineReqItemId = (await client.query(`select id from inventory_request_items where request_id = $1`, [vaccineReqId])).rows[0].id;
+      await client.query(
+        `select approve_inventory_request($1, $2::jsonb)`,
+        [vaccineReqId, JSON.stringify([{ request_item_id: vaccineReqItemId, approved_qty: 8 }])],
+      );
+
+      await setUser(U.guardBetla);
+      await client.query(`select issue_inventory_stock($1, $2, 8, '', null)`, [vaccineReqItemId, locId]);
+
+      const vaccineBatchesAfter = await client.query(`select batch_number, remaining_qty from inventory_batches where item_id = $1 order by expiry_date`, [vaccineId]);
+      const early = vaccineBatchesAfter.rows.find((r) => r.batch_number === 'B-EARLY');
+      const late = vaccineBatchesAfter.rows.find((r) => r.batch_number === 'B-LATE');
+      check(
+        'issuing depletes the soonest-expiry batch first (FEFO), spilling into the next only once it is exhausted',
+        Number(early.remaining_qty) === 0 && Number(late.remaining_qty) === 2,
+        JSON.stringify(vaccineBatchesAfter.rows),
+      );
+      const vaccineStock = await client.query(`select available_qty from inventory_stock where item_id = $1 and location_id = $2`, [vaccineId, locId]);
+      check('the aggregate stock balance still decrements normally alongside the batch depletion', Number(vaccineStock.rows[0].available_qty) === 2, JSON.stringify(vaccineStock.rows));
+
+      // 62. An item flagged track_batch/track_expiry but with zero existing
+      // batch rows (stock posted via opening balance, predating Phase 2)
+      // must fall back to aggregate-only — issuing must NOT error, and
+      // must NOT spuriously create a batch row.
+      await setUser(U.director);
+      await client.query(`select post_opening_balance($1, $2, 6, 'pre-Phase-2 stock', null)`, [legacyId, locId]);
+      const legacyReqId = (await client.query(
+        `select create_inventory_request($1, $2::jsonb, null, 'Medium', 'legacy fallback test') as id`,
+        [locId, JSON.stringify([{ item_id: legacyId, requested_qty: 4 }])],
+      )).rows[0].id;
+      await client.query(`update inventory_requests set status = 'Submitted' where id = $1`, [legacyReqId]);
+      const legacyReqItemId = (await client.query(`select id from inventory_request_items where request_id = $1`, [legacyReqId])).rows[0].id;
+      await client.query(
+        `select approve_inventory_request($1, $2::jsonb)`,
+        [legacyReqId, JSON.stringify([{ request_item_id: legacyReqItemId, approved_qty: 4 }])],
+      );
+      await setUser(U.guardBetla);
+      const legacyIssueErr = await expectErrorSp(() => client.query(`select issue_inventory_stock($1, $2, 4, '', null)`, [legacyReqItemId, locId]));
+      check('issuing a batch-flagged item with zero pre-existing batches succeeds (legacy fallback, no error)', legacyIssueErr === null, legacyIssueErr ?? '');
+      const legacyBatches = await client.query(`select id from inventory_batches where item_id = $1`, [legacyId]);
+      check('no batch row is spuriously created for the legacy fallback path', legacyBatches.rows.length === 0, JSON.stringify(legacyBatches.rows));
+      const legacyStock = await client.query(`select available_qty from inventory_stock where item_id = $1 and location_id = $2`, [legacyId, locId]);
+      check('the legacy item\'s aggregate stock still decrements normally', Number(legacyStock.rows[0].available_qty) === 2, JSON.stringify(legacyStock.rows));
+
+      await client.query('ROLLBACK');
+    } finally {
+      await client.end();
+    }
+  }
+
   console.log(results.join('\n'));
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail > 0 ? 1 : 0);

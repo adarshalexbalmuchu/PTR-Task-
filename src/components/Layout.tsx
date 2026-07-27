@@ -73,7 +73,9 @@ const SECTION_TITLES: Record<string, string> = {
   profile: 'My profile',
   stock: 'Stock',
   requests: 'Requests',
+  purchases: 'Purchases',
   transactions: 'Transactions',
+  reports: 'Inventory reports',
 };
 
 // Which rail section a given path belongs to (task detail lives under Tasks).
