@@ -41,14 +41,13 @@ export default function InventorySubNav() {
   const activeKey = location.pathname.slice(base.length).replace(/^\//, '').split('/')[0] ?? '';
 
   return (
-    <nav>
-      <div className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wide text-n-70">Inventory</div>
+    <nav className="space-y-0.5">
       {entries.map((entry) => (
         <button
           key={entry.key}
           onClick={() => navigate(entry.key ? `${base}/${entry.key}` : base)}
-          className={`w-full flex items-center gap-2.5 px-2.5 h-9 rounded text-13 transition-colors ${
-            activeKey === entry.key ? 'bg-ptr-green/10 text-ptr-green font-medium' : 'text-n-90 hover:bg-n-20'
+          className={`w-full flex items-center gap-3 px-2.5 h-10 rounded text-13 transition-colors ${
+            activeKey === entry.key ? 'bg-ptr-green/10 text-ptr-green font-semibold' : 'text-n-90 hover:bg-n-20'
           }`}
         >
           {entry.icon}
