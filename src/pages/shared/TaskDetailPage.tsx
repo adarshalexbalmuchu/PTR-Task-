@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import {
   ArrowLeft,
   Edit2,
@@ -14,8 +15,10 @@ import {
   TrendingUp,
   Plus,
   Send,
+  Users,
 } from 'lucide-react';
 import useStore from '../../store/useStore';
+import { supabase } from '../../lib/supabase';
 import { useTask } from '../../hooks/useTask';
 import { useUsers } from '../../hooks/useUsers';
 import { useRanges } from '../../hooks/useRanges';
@@ -97,6 +100,23 @@ export default function TaskDetailPage() {
   const { users } = useUsers();
   const { ranges, areas } = useRanges();
 
+  // Only the id/name are needed here (not the full useTaskGroup hook, which
+  // also loads members/occurrences/series — overkill just to label a link
+  // back to the group a task came from).
+  const { data: taskGroup } = useQuery({
+    queryKey: ['task-group-name', task?.groupId],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('task_groups').select('id, name').eq('id', task!.groupId!).single();
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!task?.groupId,
+  });
+  const groupBasePath = currentUser?.role === 'director' ? '/director' : currentUser?.role === 'range_officer' ? '/officer' : '/guard';
+  const groupLink = task?.groupId && taskGroup
+    ? { name: taskGroup.name, path: `${groupBasePath}/groups/${task.groupId}${task.occurrenceId ? `/occurrences/${task.occurrenceId}` : ''}` }
+    : null;
+
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [showRequestChanges, setShowRequestChanges] = useState(false);
@@ -159,6 +179,7 @@ export default function TaskDetailPage() {
           uploadAttachment={uploadAttachment}
           onEdit={() => setEditOpen(true)}
           onDelete={() => setDeleteOpen(true)}
+          groupLink={groupLink}
         />
         {editOpen && currentUser && (
           <TaskForm
@@ -233,6 +254,14 @@ export default function TaskDetailPage() {
               <span className="inline-flex items-center gap-1.5 text-13 font-semibold text-signal-red">
                 <span className="w-2 h-2 rounded-full bg-signal-red" />Overdue
               </span>
+            )}
+            {groupLink && (
+              <button
+                onClick={() => navigate(groupLink.path)}
+                className="inline-flex items-center gap-1.5 text-13 font-medium text-ptr-accent bg-ptr-accent/10 hover:bg-ptr-accent/20 rounded-full px-2.5 h-6 transition-colors"
+              >
+                <Users className="w-3.5 h-3.5" />Part of {groupLink.name}
+              </button>
             )}
           </div>
         </div>

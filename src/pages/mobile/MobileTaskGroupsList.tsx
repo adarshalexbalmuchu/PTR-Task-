@@ -20,12 +20,13 @@ function NewGroupSheet({ open, onClose }: { open: boolean; onClose: () => void }
   const [name, setName] = useState('');
   const [groupType, setGroupType] = useState<TaskGroupType>('permanent');
   const [rangeId, setRangeId] = useState('');
+  const [membersCanReply, setMembersCanReply] = useState(true);
   const [error, setError] = useState('');
 
   const submit = async () => {
     if (!name.trim()) return;
     try {
-      await createGroup.mutateAsync({ name: name.trim(), groupType, rangeId: rangeId || undefined });
+      await createGroup.mutateAsync({ name: name.trim(), groupType, rangeId: rangeId || undefined, membersCanReply });
       setName(''); setRangeId('');
       onClose();
     } catch (err) {
@@ -55,6 +56,10 @@ function NewGroupSheet({ open, onClose }: { open: boolean; onClose: () => void }
             {ranges.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
           </Select>
         </div>
+        <label className="flex items-center gap-2.5 py-1">
+          <input type="checkbox" checked={membersCanReply} onChange={(e) => setMembersCanReply(e.target.checked)} className="w-5 h-5 accent-ptr-green" />
+          <span className="text-13 text-n-90">Members can post in the discussion (not just coordinators)</span>
+        </label>
         <button onClick={() => void submit()} disabled={createGroup.isPending || !name.trim()} className="btn-primary w-full">Create group</button>
       </div>
     </BottomSheet>

@@ -17,6 +17,7 @@ import MessageThread from '../../components/MessageThread';
 import { Page, PageHeading } from '../../components/layout/Page';
 import { getErrorMessage } from '../../lib/errors';
 import { formatDate, formatDateTime } from '../../utils/formatters';
+import { computeFirstOccurrenceDate, computeDueDate } from '../../utils/taskSeriesPreview';
 import MobileTaskGroupDetail from '../mobile/MobileTaskGroupDetail';
 import type { TaskCategory, TaskPriority, TaskSeries, TaskSeriesRecurrence, TaskSeriesStatus } from '../../types';
 
@@ -138,6 +139,13 @@ function NewRecurringSeriesForm({ groupId, defaultRangeId, onClose }: { groupId:
   const valid = title.trim() && startDate && rangeId
     && ((recurrenceType !== 'weekly' && recurrenceType !== 'weekdays') || weekdays.length > 0);
 
+  const firstOccurrence = computeFirstOccurrenceDate(
+    recurrenceType,
+    { weekdays, dayOfMonth: Number(dayOfMonth) || 1, intervalDays: Number(intervalDays) || 1 },
+    startDate,
+  );
+  const firstDue = firstOccurrence ? computeDueDate(firstOccurrence, Number(dueOffsetDays) || 0) : null;
+
   const submit = async () => {
     if (!valid) return;
     try {
@@ -252,6 +260,11 @@ function NewRecurringSeriesForm({ groupId, defaultRangeId, onClose }: { groupId:
         </div>
       </div>
 
+      {firstOccurrence && firstDue && (
+        <div className="rounded bg-n-10 px-3 py-2 text-13 text-n-90">
+          First assignment created <span className="font-medium">{formatDate(firstOccurrence)}</span> at {creationTime} IST · due <span className="font-medium">{formatDate(firstDue)}</span>
+        </div>
+      )}
       <p className="text-13 text-n-70">Created as a draft — activate it from the series list below once you're ready for it to start generating assignments.</p>
 
       <div className="flex gap-2">

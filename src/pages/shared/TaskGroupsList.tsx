@@ -33,12 +33,13 @@ function NewGroupForm({ onClose }: { onClose: () => void }) {
   const [description, setDescription] = useState('');
   const [groupType, setGroupType] = useState<TaskGroupType>('permanent');
   const [rangeId, setRangeId] = useState('');
+  const [membersCanReply, setMembersCanReply] = useState(true);
   const [error, setError] = useState('');
 
   const submit = async () => {
     if (!name.trim()) return;
     try {
-      await createGroup.mutateAsync({ name: name.trim(), description, groupType, rangeId: rangeId || undefined });
+      await createGroup.mutateAsync({ name: name.trim(), description, groupType, rangeId: rangeId || undefined, membersCanReply });
       onClose();
     } catch (err) {
       setError(getErrorMessage(err, 'Failed to create the group.'));
@@ -72,6 +73,10 @@ function NewGroupForm({ onClose }: { onClose: () => void }) {
           </Select>
         </div>
       </div>
+      <label className="flex items-center gap-2.5 py-1">
+        <input type="checkbox" checked={membersCanReply} onChange={(e) => setMembersCanReply(e.target.checked)} className="w-5 h-5 accent-ptr-green" />
+        <span className="text-13 text-n-90">Members can post in the discussion (not just coordinators)</span>
+      </label>
       <div className="flex gap-2">
         <button onClick={() => void submit()} disabled={createGroup.isPending || !name.trim()} className="btn-primary">Create group</button>
         <button onClick={onClose} className="btn-secondary">Cancel</button>

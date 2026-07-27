@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, MapPin, Calendar, User, Tag, Navigation, Send, CheckCircle2,
   RotateCcw, Archive, AlertCircle, Paperclip, Check, RefreshCw, X, Copy,
-  Edit2, Trash2,
+  Edit2, Trash2, Users,
 } from 'lucide-react';
 import type { useTask } from '../../hooks/useTask';
 import StatusBadge from '../../components/StatusBadge';
@@ -53,13 +53,14 @@ interface Props {
   uploadAttachment: UseTaskResult['uploadAttachment'];
   onEdit: () => void;
   onDelete: () => void;
+  groupLink: { name: string; path: string } | null;
 }
 
 export default function MobileTaskDetail({
   task, currentUser, users, ranges, areas,
   startTask, completeTask, archiveTask, reopenTask, requestChanges,
   addComment, addTaskUpdate, uploadAttachment,
-  onEdit, onDelete,
+  onEdit, onDelete, groupLink,
 }: Props) {
   const navigate = useNavigate();
 
@@ -185,6 +186,14 @@ export default function MobileTaskDetail({
             <div className="mt-2 inline-flex items-center gap-1.5 text-13 font-semibold text-signal-red">
               <span className="w-2 h-2 rounded-full bg-signal-red" />{due.text || 'Overdue'}
             </div>
+          )}
+          {groupLink && (
+            <button
+              onClick={() => navigate(groupLink.path)}
+              className="mt-2 inline-flex items-center gap-1.5 text-13 font-medium text-ptr-accent bg-ptr-accent/10 active:bg-ptr-accent/20 rounded-full px-2.5 h-7"
+            >
+              <Users className="w-3.5 h-3.5" />Part of {groupLink.name}
+            </button>
           )}
         </div>
 

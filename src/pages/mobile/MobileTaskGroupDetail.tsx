@@ -14,6 +14,7 @@ import MessageThread from '../../components/MessageThread';
 import BottomSheet from '../../components/mobile/BottomSheet';
 import { getErrorMessage } from '../../lib/errors';
 import { formatDate } from '../../utils/formatters';
+import { computeFirstOccurrenceDate, computeDueDate } from '../../utils/taskSeriesPreview';
 import type { TaskCategory, TaskPriority, TaskSeries, TaskSeriesRecurrence, TaskSeriesStatus } from '../../types';
 
 const CATEGORIES: TaskCategory[] = ['Patrol', 'Camera Trap', 'Survey', 'Maintenance', 'Admin', 'Other'];
@@ -119,6 +120,13 @@ function NewRecurringSeriesSheet({ open, onClose, groupId, defaultRangeId }: { o
   const valid = title.trim() && startDate && rangeId
     && ((recurrenceType !== 'weekly' && recurrenceType !== 'weekdays') || weekdays.length > 0);
 
+  const firstOccurrence = computeFirstOccurrenceDate(
+    recurrenceType,
+    { weekdays, dayOfMonth: Number(dayOfMonth) || 1, intervalDays: Number(intervalDays) || 1 },
+    startDate,
+  );
+  const firstDue = firstOccurrence ? computeDueDate(firstOccurrence, Number(dueOffsetDays) || 0) : null;
+
   const submit = async () => {
     if (!valid) return;
     try {
@@ -212,6 +220,11 @@ function NewRecurringSeriesSheet({ open, onClose, groupId, defaultRangeId }: { o
             </Select>
           </div>
         </div>
+        {firstOccurrence && firstDue && (
+          <div className="rounded bg-n-10 px-3 py-2 text-13 text-n-90">
+            First assignment created <span className="font-medium">{formatDate(firstOccurrence)}</span> at {creationTime} IST · due <span className="font-medium">{formatDate(firstDue)}</span>
+          </div>
+        )}
         <p className="text-13 text-n-70">Created as a draft — activate it from the Assignments tab once ready.</p>
         <button onClick={() => void submit()} disabled={!valid} className="btn-primary w-full">Save as draft</button>
       </div>
