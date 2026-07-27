@@ -36,8 +36,14 @@ export function useInventoryLocations() {
 
   const updateLocation = useMutation({
     mutationFn: async ({ id, ...data }: {
-      id: string; name?: string; type?: InventoryLocationType; rangeId?: string; addressDescription?: string;
-      parentLocationId?: string; active?: boolean;
+      id: string; name?: string; type?: InventoryLocationType;
+      // string | null, not just string | undefined: undefined means "leave
+      // this field alone", null means "clear it back to no range/parent" —
+      // collapsing those to one optional string made switching a location
+      // back to "None" silently do nothing (an empty-string patch value
+      // isn't a valid uuid and either errored or was skipped entirely).
+      rangeId?: string | null; addressDescription?: string;
+      parentLocationId?: string | null; active?: boolean;
     }) => {
       const patch: Database['public']['Tables']['inventory_locations']['Update'] = {};
       if (data.name !== undefined) patch.name = data.name;
