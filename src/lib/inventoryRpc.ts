@@ -113,3 +113,31 @@ export async function postInventoryPurchase(args: {
   if (error) throw new Error(error.message);
   return data as string | null;
 }
+
+// Returns the new sale's id, or null if a retried call with the same
+// idempotencyKey was recognized as a duplicate and safely skipped.
+export async function postInventorySale(args: {
+  locationId: string;
+  buyerName?: string;
+  invoiceNumber?: string;
+  saleDate: string;
+  notes?: string;
+  items: { itemId: string; quantity: number; unitPrice?: number }[];
+  idempotencyKey?: string;
+}): Promise<string | null> {
+  const { data, error } = await clientWithData.rpc('post_inventory_sale', {
+    p_location_id: args.locationId,
+    p_buyer_name: args.buyerName ?? '',
+    p_invoice_number: args.invoiceNumber ?? null,
+    p_sale_date: args.saleDate,
+    p_notes: args.notes ?? '',
+    p_items: args.items.map((i) => ({
+      item_id: i.itemId,
+      quantity: i.quantity,
+      unit_price: i.unitPrice ?? null,
+    })),
+    p_idempotency_key: args.idempotencyKey ?? null,
+  });
+  if (error) throw new Error(error.message);
+  return data as string | null;
+}

@@ -1,13 +1,14 @@
 import { useState } from 'react';
-import { Plus, Pencil } from 'lucide-react';
+import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { useInventoryLocations } from '../../hooks/useInventoryLocations';
 import { useRanges } from '../../hooks/useRanges';
 import Select from '../../components/Select';
 import EmptyState from '../../components/EmptyState';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { CommandBar, ContextPanel } from '../../components/layout/Slots';
 import { Page, PageHeading } from '../../components/layout/Page';
 import InventorySubNav from '../../components/inventory/InventorySubNav';
-import { getErrorMessage } from '../../lib/errors';
+import { getErrorMessage, friendlyDeleteErrorMessage } from '../../lib/errors';
 import type { InventoryLocation, InventoryLocationType } from '../../types';
 
 const LOCATION_TYPE_LABELS: Record<InventoryLocationType, string> = {
@@ -90,13 +91,14 @@ function LocationFormFields({
 }
 
 export default function InventoryLocations() {
-  const { locations, isLoading, createLocation, updateLocation } = useInventoryLocations();
+  const { locations, isLoading, createLocation, updateLocation, deleteLocation } = useInventoryLocations();
   const { ranges } = useRanges();
   const [formOpen, setFormOpen] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<FormState>(EMPTY_FORM);
   const [error, setError] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   const startCreate = () => {
     setEditingId(null);
@@ -150,6 +152,17 @@ export default function InventoryLocations() {
       await updateLocation.mutateAsync({ id: loc.id, active: !loc.active });
     } catch (err) {
       alert(getErrorMessage(err, 'Failed to update the location.'));
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await deleteLocation.mutateAsync(deleteTarget.id);
+      setDeleteTarget(null);
+    } catch (err) {
+      alert(friendlyDeleteErrorMessage(err, 'location'));
+      setDeleteTarget(null);
     }
   };
 
@@ -209,6 +222,13 @@ export default function InventoryLocations() {
                   >
                     <Pencil className="w-4 h-4" />
                   </button>
+                  <button
+                    onClick={() => setDeleteTarget({ id: loc.id, name: loc.name })}
+                    className="w-8 h-8 flex items-center justify-center rounded text-n-70 hover:bg-signal-red-bg hover:text-signal-red transition-colors"
+                    aria-label={`Delete ${loc.name}`}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 </div>
               </div>
               {editingId === loc.id && (
@@ -224,6 +244,15 @@ export default function InventoryLocations() {
           ))}
         </div>
       )}
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        title="Delete location"
+        message={`Delete "${deleteTarget?.name}"? This can't be undone. If it's already used in stock, transactions, purchases, sales, or requests, deactivate it instead.`}
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={() => void confirmDelete()}
+        onCancel={() => setDeleteTarget(null)}
+      />
       </Page>
     </>
   );

@@ -1,17 +1,18 @@
 import { useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, Trash2 } from 'lucide-react';
 import { useInventoryItems, useInventoryCategories, useInventoryUnits } from '../../hooks/useInventoryCatalog';
 import Select from '../../components/Select';
 import EmptyState from '../../components/EmptyState';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { CommandBar, ContextPanel } from '../../components/layout/Slots';
 import { Page, PageHeading } from '../../components/layout/Page';
 import InventorySubNav from '../../components/inventory/InventorySubNav';
-import { getErrorMessage } from '../../lib/errors';
+import { getErrorMessage, friendlyDeleteErrorMessage } from '../../lib/errors';
 import { quantityInputStep, isIntegerOnlyUnit } from '../../lib/inventoryQuantity';
 import type { InventoryItemKind } from '../../types';
 
 export default function InventoryItems() {
-  const { items, isLoading, createItem } = useInventoryItems();
+  const { items, isLoading, createItem, updateItem, deleteItem } = useInventoryItems();
   const { categories } = useInventoryCategories();
   const { units } = useInventoryUnits();
   const [formOpen, setFormOpen] = useState(false);
@@ -21,6 +22,7 @@ export default function InventoryItems() {
   const [kind, setKind] = useState<InventoryItemKind>('consumable');
   const [minStock, setMinStock] = useState('0');
   const [reorderLevel, setReorderLevel] = useState('0');
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
 
   const reset = () => { setName(''); setCategoryId(''); setUnitId(''); setKind('consumable'); setMinStock('0'); setReorderLevel('0'); };
 
@@ -43,6 +45,25 @@ export default function InventoryItems() {
       setFormOpen(false);
     } catch (err) {
       alert(getErrorMessage(err, 'Failed to create item.'));
+    }
+  };
+
+  const toggleActive = async (id: string, active: boolean) => {
+    try {
+      await updateItem.mutateAsync({ id, active: !active });
+    } catch (err) {
+      alert(getErrorMessage(err, 'Failed to update the item.'));
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      await deleteItem.mutateAsync(deleteTarget.id);
+      setDeleteTarget(null);
+    } catch (err) {
+      alert(friendlyDeleteErrorMessage(err, 'item'));
+      setDeleteTarget(null);
     }
   };
 
@@ -118,11 +139,37 @@ export default function InventoryItems() {
                   {!item.active && ' · Inactive'}
                 </div>
               </div>
-              <div className="text-xs text-n-70 flex-shrink-0">Min {item.minStock} · Reorder {item.reorderLevel}</div>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                <div className="text-xs text-n-70">Min {item.minStock} · Reorder {item.reorderLevel}</div>
+                <button
+                  onClick={() => void toggleActive(item.id, item.active)}
+                  className={`text-xs font-semibold px-2 h-6 rounded-full transition-colors ${
+                    item.active ? 'bg-n-20 text-n-70 hover:bg-signal-red-bg hover:text-signal-red' : 'bg-signal-red-bg text-signal-red hover:bg-ptr-green/10 hover:text-ptr-green'
+                  }`}
+                >
+                  {item.active ? 'Active' : 'Inactive'}
+                </button>
+                <button
+                  onClick={() => setDeleteTarget({ id: item.id, name: item.name })}
+                  className="w-8 h-8 flex items-center justify-center rounded text-n-70 hover:bg-signal-red-bg hover:text-signal-red transition-colors"
+                  aria-label={`Delete ${item.name}`}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           ))}
         </div>
       )}
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        title="Delete item"
+        message={`Delete "${deleteTarget?.name}"? This can't be undone. If it's already used in stock, transactions, purchases, sales, or requests, deactivate it instead.`}
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={() => void confirmDelete()}
+        onCancel={() => setDeleteTarget(null)}
+      />
       </Page>
     </>
   );

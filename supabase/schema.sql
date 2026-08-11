@@ -4017,3 +4017,243 @@ do $$ begin
 exception when others then
   raise notice 'pg_cron unavailable; series escalations not scheduled';
 end $$;
+
+-- ═════════════════════════════════════════════
+-- Hospitality Inventory Management module — Phase 3
+-- (Sales — recording stock sold to a buyer, and sales reporting)
+--
+-- Adds 'sale' as its own transaction type, symmetric to purchase_receipt:
+-- a purchase brings stock in from a supplier; a sale takes stock out to a
+-- buyer. Deliberately distinct from 'issued' (an internal request → approve
+-- → issue handshake moving stock to a location for departmental use) — a
+-- sale has a buyer, an invoice, and a unit price/revenue figure that an
+-- internal issue has none of. Callable by location staff (like
+-- post_inventory_purchase/issue_inventory_stock), not director-only —
+-- recording a sale at your own location is a routine action.
+-- ═════════════════════════════════════════════
+
+alter type inventory_transaction_type add value if not exists 'sale';
+commit;
+
+create table if not exists inventory_sales (
+  id              uuid primary key default uuid_generate_v4(),
+  location_id     uuid not null references inventory_locations(id) on delete restrict,
+  buyer_name      text not null default '',
+  invoice_number  text,
+  sale_date       date not null,
+  notes           text not null default '',
+  created_by      uuid not null references profiles(id) on delete restrict,
+  idempotency_key uuid,
+  created_at      timestamptz not null default now()
+);
+
+create unique index if not exists inventory_sales_idempotency_key_uniq
+  on inventory_sales(idempotency_key) where idempotency_key is not null;
+
+do $$ begin
+  alter table inventory_sales add constraint inventory_sales_buyer_len check (char_length(buyer_name) <= 200);
+exception when duplicate_object then null; end $$;
+
+-- Same pattern as inventory_purchase_id on audit_log (Phase 2) — lets
+-- logInventoryAction() attribute a "sale recorded" entry to the actual row.
+alter table audit_log add column if not exists inventory_sale_id uuid references inventory_sales(id) on delete set null;
+create index if not exists audit_log_inventory_sale_id_idx on audit_log(inventory_sale_id) where inventory_sale_id is not null;
+
+-- No unique(sale_id, item_id): same reasoning as inventory_purchase_items —
+-- a single sale can legitimately list the same item twice (e.g. two
+-- different unit prices in one invoice).
+create table if not exists inventory_sale_items (
+  id         uuid primary key default uuid_generate_v4(),
+  sale_id    uuid not null references inventory_sales(id) on delete cascade,
+  item_id    uuid not null references inventory_items(id) on delete restrict,
+  quantity   numeric not null check (quantity > 0),
+  unit_price numeric check (unit_price is null or unit_price >= 0),
+  notes      text not null default ''
+);
+
+create index if not exists inventory_sales_location_id_idx on inventory_sales(location_id);
+create index if not exists inventory_sale_items_sale_id_idx on inventory_sale_items(sale_id);
+
+alter table inventory_sales enable row level security;
+alter table inventory_sale_items enable row level security;
+
+drop policy if exists "inventory_sales_director" on inventory_sales;
+create policy "inventory_sales_director" on inventory_sales
+  for select using ((select get_my_role()) = 'director');
+drop policy if exists "inventory_sales_staff_read" on inventory_sales;
+create policy "inventory_sales_staff_read" on inventory_sales
+  for select using (location_id = any ((select get_my_inventory_location_ids())::uuid[]));
+
+drop policy if exists "inventory_sale_items_director" on inventory_sale_items;
+create policy "inventory_sale_items_director" on inventory_sale_items
+  for select using ((select get_my_role()) = 'director');
+drop policy if exists "inventory_sale_items_staff_read" on inventory_sale_items;
+create policy "inventory_sale_items_staff_read" on inventory_sale_items
+  for select using (
+    exists (
+      select 1 from inventory_sales s
+      where s.id = inventory_sale_items.sale_id
+        and s.location_id = any ((select get_my_inventory_location_ids())::uuid[])
+    )
+  );
+
+-- ─────────────────────────────────────────────
+-- post_inventory_sale — records a sale: one header row, one row per line
+-- item, an inventory_transactions ledger entry per line
+-- (transaction_type = 'sale'), and FEFO batch depletion for items that
+-- track batch/expiry — same depletion algorithm as issue_inventory_stock.
+-- Unlike a purchase, a sale REDUCES inventory_stock and fails the whole
+-- call (raising, so nothing partially commits) if any single line would
+-- take a location below zero — same insufficient-stock guard as
+-- issue_inventory_stock.
+-- p_items shape: [{"item_id":uuid,"quantity":numeric,"unit_price":numeric|null}, ...]
+-- ─────────────────────────────────────────────
+-- Returns the new sale's id, or null if a retried call with the same
+-- p_idempotency_key was recognized as a duplicate and safely skipped.
+create or replace function post_inventory_sale(
+  p_location_id uuid,
+  p_buyer_name text,
+  p_invoice_number text,
+  p_sale_date date,
+  p_notes text,
+  p_items jsonb,
+  p_idempotency_key uuid default null
+) returns uuid language plpgsql security definer set search_path = '' as $$
+declare
+  uid uuid := (select auth.uid());
+  caller_role public.user_role;
+  v_sale_id uuid;
+  v_item jsonb;
+  v_item_id uuid;
+  v_quantity numeric;
+  v_unit_price numeric;
+  prev numeric;
+begin
+  if uid is null then raise exception 'Not authenticated'; end if;
+
+  if p_idempotency_key is not null and exists (
+    select 1 from public.inventory_sales where idempotency_key = p_idempotency_key
+  ) then
+    return null;
+  end if;
+
+  caller_role := public.get_my_role();
+  if caller_role is distinct from 'director' and not exists (
+    select 1 from public.inventory_location_staff
+      where location_id = p_location_id and user_id = uid and active
+  ) then
+    raise exception 'You are not assigned to this location';
+  end if;
+
+  if p_sale_date is null then raise exception 'Sale date is required'; end if;
+  if jsonb_array_length(coalesce(p_items, '[]'::jsonb)) = 0 then
+    raise exception 'A sale must have at least one item';
+  end if;
+
+  insert into public.inventory_sales
+    (location_id, buyer_name, invoice_number, sale_date, notes, created_by, idempotency_key)
+  values
+    (p_location_id, coalesce(p_buyer_name, ''), p_invoice_number, p_sale_date, coalesce(p_notes, ''), uid, p_idempotency_key)
+  returning id into v_sale_id;
+
+  for v_item in select * from jsonb_array_elements(p_items)
+  loop
+    v_item_id := (v_item ->> 'item_id')::uuid;
+    v_quantity := (v_item ->> 'quantity')::numeric;
+    v_unit_price := nullif(v_item ->> 'unit_price', '')::numeric;
+
+    if v_quantity is null or v_quantity <= 0 then
+      raise exception 'Each sale line must have a positive quantity';
+    end if;
+
+    if not exists (select 1 from public.inventory_items where id = v_item_id) then
+      raise exception 'Item not found';
+    end if;
+
+    select available_qty into prev from public.inventory_stock
+      where item_id = v_item_id and location_id = p_location_id
+      for update;
+    if prev is null or prev < v_quantity then
+      raise exception 'Insufficient stock at this location to complete this sale';
+    end if;
+
+    update public.inventory_stock
+      set available_qty = prev - v_quantity, updated_at = now()
+      where item_id = v_item_id and location_id = p_location_id;
+
+    -- FEFO batch depletion — same algorithm/caveats as issue_inventory_stock.
+    if exists (
+      select 1 from public.inventory_items
+        where id = v_item_id and (track_batch or track_expiry)
+    ) and exists (
+      select 1 from public.inventory_batches
+        where item_id = v_item_id and location_id = p_location_id
+    ) then
+      declare
+        v_remaining_to_deplete numeric := v_quantity;
+        v_batch record;
+        v_take numeric;
+      begin
+        for v_batch in
+          select id, remaining_qty from public.inventory_batches
+            where item_id = v_item_id and location_id = p_location_id and remaining_qty > 0
+            order by expiry_date asc nulls last, created_at asc
+            for update
+        loop
+          exit when v_remaining_to_deplete <= 0;
+          v_take := least(v_batch.remaining_qty, v_remaining_to_deplete);
+          update public.inventory_batches set remaining_qty = remaining_qty - v_take where id = v_batch.id;
+          v_remaining_to_deplete := v_remaining_to_deplete - v_take;
+        end loop;
+      end;
+    end if;
+
+    insert into public.inventory_transactions
+      (item_id, location_id, quantity, transaction_type, related_request_id, performed_by, notes, previous_balance, new_balance)
+    values
+      (v_item_id, p_location_id, v_quantity, 'sale', null, uid, p_notes, prev, prev - v_quantity);
+
+    insert into public.inventory_sale_items
+      (sale_id, item_id, quantity, unit_price, notes)
+    values
+      (v_sale_id, v_item_id, v_quantity, v_unit_price, '');
+  end loop;
+
+  return v_sale_id;
+end;
+$$;
+revoke all on function post_inventory_sale(uuid, text, text, date, text, jsonb, uuid) from public;
+revoke execute on function post_inventory_sale(uuid, text, text, date, text, jsonb, uuid) from anon;
+grant execute on function post_inventory_sale(uuid, text, text, date, text, jsonb, uuid) to authenticated;
+
+-- Reports: monthly sales aggregate (quantity + revenue), security_invoker =
+-- true so RLS on the underlying inventory_sales/inventory_sale_items
+-- applies as the querying user — same reasoning as inventory_issued_monthly
+-- above. Grouped by sale_date (the business date entered on the sale), not
+-- created_at, since that's the date a report should bucket by.
+create or replace view inventory_sales_monthly
+  with (security_invoker = true) as
+  select
+    si.item_id,
+    s.location_id,
+    date_trunc('month', s.sale_date)::date as month,
+    sum(si.quantity) as sold_qty,
+    sum(si.quantity * coalesce(si.unit_price, 0)) as revenue
+  from inventory_sale_items si
+  join inventory_sales s on s.id = si.sale_id
+  group by si.item_id, s.location_id, date_trunc('month', s.sale_date);
+
+grant select on inventory_sales_monthly to authenticated;
+
+-- ─────────────────────────────────────────────
+-- Catalog deletes — items/categories/units/locations previously had no
+-- delete path at all from the client (only create + toggle-active). All
+-- four already grant director "for all" (which includes delete) via their
+-- existing RLS policies above, so no policy change is needed here — a
+-- plain client-side `.delete()` already works for a director. The FK
+-- `on delete restrict` on every table that references these (stock,
+-- transactions, purchases, sales, requests, batches) means a genuine
+-- delete only succeeds for a row with no history yet; anything already in
+-- use surfaces a foreign_key_violation (23503) that the client turns into
+-- a "deactivate instead" message rather than a raw Postgres error.
+-- ─────────────────────────────────────────────

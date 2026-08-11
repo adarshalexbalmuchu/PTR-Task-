@@ -9,6 +9,7 @@ const TYPE_LABEL: Record<string, string> = {
   opening_balance: 'Opening balance',
   issued: 'Issued',
   purchase_receipt: 'Purchase',
+  sale: 'Sale',
 };
 
 export default function InventoryTransactionsPage() {
@@ -35,7 +36,7 @@ export default function InventoryTransactionsPage() {
                 </div>
               </div>
               <div className="text-13 font-semibold tabular-nums text-n-100 flex-shrink-0">
-                {t.transactionType === 'issued' ? '−' : '+'}{t.quantity}
+                {t.transactionType === 'issued' || t.transactionType === 'sale' ? '−' : '+'}{t.quantity}
               </div>
             </div>
           ))}

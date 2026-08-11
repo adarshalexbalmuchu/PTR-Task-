@@ -1,19 +1,23 @@
 import { useState } from 'react';
-import { Plus } from 'lucide-react';
+import { Plus, X } from 'lucide-react';
 import { useInventoryCategories, useInventoryUnits } from '../../hooks/useInventoryCatalog';
 import EmptyState from '../../components/EmptyState';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import { Page, PageHeading, SectionTitle } from '../../components/layout/Page';
 import { ContextPanel } from '../../components/layout/Slots';
 import InventorySubNav from '../../components/inventory/InventorySubNav';
-import { getErrorMessage } from '../../lib/errors';
+import { getErrorMessage, friendlyDeleteErrorMessage } from '../../lib/errors';
+
+type DeleteTarget = { kind: 'category' | 'unit'; id: string; name: string };
 
 export default function InventoryCategories() {
-  const { categories, isLoading: categoriesLoading, createCategory } = useInventoryCategories();
-  const { units, isLoading: unitsLoading, createUnit } = useInventoryUnits();
+  const { categories, isLoading: categoriesLoading, createCategory, deleteCategory } = useInventoryCategories();
+  const { units, isLoading: unitsLoading, createUnit, deleteUnit } = useInventoryUnits();
   const [newCategory, setNewCategory] = useState('');
   const [newUnit, setNewUnit] = useState('');
   const [newUnitAbbr, setNewUnitAbbr] = useState('');
   const [newUnitAllowsFractional, setNewUnitAllowsFractional] = useState(true);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
 
   const addCategory = async () => {
     if (!newCategory.trim()) return;
@@ -32,6 +36,18 @@ export default function InventoryCategories() {
       setNewUnit(''); setNewUnitAbbr(''); setNewUnitAllowsFractional(true);
     } catch (err) {
       alert(getErrorMessage(err, 'Failed to add unit.'));
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    try {
+      if (deleteTarget.kind === 'category') await deleteCategory.mutateAsync(deleteTarget.id);
+      else await deleteUnit.mutateAsync(deleteTarget.id);
+      setDeleteTarget(null);
+    } catch (err) {
+      alert(friendlyDeleteErrorMessage(err, deleteTarget.kind));
+      setDeleteTarget(null);
     }
   };
 
@@ -62,7 +78,16 @@ export default function InventoryCategories() {
         ) : (
           <div className="flex flex-wrap gap-2">
             {categories.map((c) => (
-              <span key={c.id} className="inline-flex items-center h-8 px-3 rounded-full bg-n-20 text-13 text-n-90">{c.name}</span>
+              <span key={c.id} className="inline-flex items-center gap-1.5 h-8 pl-3 pr-1.5 rounded-full bg-n-20 text-13 text-n-90">
+                {c.name}
+                <button
+                  onClick={() => setDeleteTarget({ kind: 'category', id: c.id, name: c.name })}
+                  className="w-5 h-5 flex items-center justify-center rounded-full text-n-70 hover:bg-signal-red-bg hover:text-signal-red transition-colors"
+                  aria-label={`Delete ${c.name}`}
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </span>
             ))}
           </div>
         )}
@@ -92,13 +117,29 @@ export default function InventoryCategories() {
         ) : (
           <div className="flex flex-wrap gap-2">
             {units.map((u) => (
-              <span key={u.id} className="inline-flex items-center h-8 px-3 rounded-full bg-n-20 text-13 text-n-90">
+              <span key={u.id} className="inline-flex items-center gap-1.5 h-8 pl-3 pr-1.5 rounded-full bg-n-20 text-13 text-n-90">
                 {u.name}{u.abbreviation && ` (${u.abbreviation})`}{!u.allowsFractional && ' · whole numbers only'}
+                <button
+                  onClick={() => setDeleteTarget({ kind: 'unit', id: u.id, name: u.name })}
+                  className="w-5 h-5 flex items-center justify-center rounded-full text-n-70 hover:bg-signal-red-bg hover:text-signal-red transition-colors"
+                  aria-label={`Delete ${u.name}`}
+                >
+                  <X className="w-3 h-3" />
+                </button>
               </span>
             ))}
           </div>
         )}
       </section>
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        title={deleteTarget?.kind === 'category' ? 'Delete category' : 'Delete unit'}
+        message={`Delete "${deleteTarget?.name}"? This can't be undone. If it's already used by an item, deactivate the item instead.`}
+        confirmLabel="Delete"
+        variant="danger"
+        onConfirm={() => void confirmDelete()}
+        onCancel={() => setDeleteTarget(null)}
+      />
       </Page>
     </>
   );

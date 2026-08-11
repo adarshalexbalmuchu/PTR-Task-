@@ -1,5 +1,5 @@
 import { useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Package, Tags, MapPin, Boxes, ClipboardList, ShoppingCart, History, FileBarChart, UsersRound } from 'lucide-react';
+import { LayoutDashboard, Package, Tags, MapPin, Boxes, ClipboardList, ShoppingCart, Receipt, History, FileBarChart, UsersRound } from 'lucide-react';
 import useStore from '../../store/useStore';
 import { canManageInventory } from '../../lib/permissions';
 import { inventoryBase } from '../../lib/inventoryBase';
@@ -37,6 +37,7 @@ export default function InventorySubNav() {
     { key: 'stock', label: 'Stock', icon: <Boxes className="w-4 h-4" /> },
     { key: 'requests', label: 'Requests', icon: <ClipboardList className="w-4 h-4" /> },
     { key: 'purchases', label: 'Purchases', icon: <ShoppingCart className="w-4 h-4" /> },
+    { key: 'sales', label: 'Sales', icon: <Receipt className="w-4 h-4" /> },
     { key: 'transactions', label: 'Transactions', icon: <History className="w-4 h-4" /> },
     { key: 'reports', label: 'Reports', icon: <FileBarChart className="w-4 h-4" /> },
     ...(isDirector ? [{ key: 'managers', label: 'Managers', icon: <UsersRound className="w-4 h-4" /> }] : []),

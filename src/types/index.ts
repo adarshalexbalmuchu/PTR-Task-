@@ -366,6 +366,35 @@ export interface InventoryPurchase {
   createdAt: string;
 }
 
+// ─────────────────────────────────────────────
+// Hospitality Inventory Management — Phase 3 (sales)
+// ─────────────────────────────────────────────
+
+export interface InventorySaleItem {
+  id: string;
+  saleId: string;
+  itemId: string;
+  itemName?: string;
+  unitAbbreviation?: string;
+  quantity: number;
+  unitPrice?: number;
+  notes: string;
+}
+
+export interface InventorySale {
+  id: string;
+  locationId: string;
+  locationName?: string;
+  buyerName: string;
+  invoiceNumber?: string;
+  saleDate: string;
+  notes: string;
+  createdBy: string;
+  createdByName?: string;
+  items: InventorySaleItem[];
+  createdAt: string;
+}
+
 export interface InventoryBatch {
   id: string;
   itemId: string;

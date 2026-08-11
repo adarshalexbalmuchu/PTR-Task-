@@ -29,7 +29,19 @@ export function useInventoryCategories() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['inventory-categories'] }),
   });
 
-  return { categories, isLoading, createCategory };
+  // Hard delete — `inventory_categories.id` is `on delete restrict` from
+  // inventory_items, so this only ever succeeds for a category no item
+  // references yet; anything in use surfaces a friendly "deactivate
+  // instead" message (see friendlyDeleteErrorMessage in the page).
+  const deleteCategory = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('inventory_categories').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['inventory-categories'] }),
+  });
+
+  return { categories, isLoading, createCategory, deleteCategory };
 }
 
 export function useInventoryUnits() {
@@ -56,7 +68,18 @@ export function useInventoryUnits() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['inventory-units'] }),
   });
 
-  return { units, isLoading, createUnit };
+  // Hard delete — `inventory_units.id` is `on delete restrict` from
+  // inventory_items, so this only ever succeeds for a unit no item
+  // references yet.
+  const deleteUnit = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('inventory_units').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['inventory-units'] }),
+  });
+
+  return { units, isLoading, createUnit, deleteUnit };
 }
 
 export function useInventoryItems() {
@@ -127,5 +150,17 @@ export function useInventoryItems() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['inventory-items'] }),
   });
 
-  return { items, isLoading, createItem, updateItem };
+  // Hard delete — `inventory_items.id` is `on delete restrict` from stock/
+  // transactions/purchases/sales/request lines, so this only ever succeeds
+  // for an item with no history yet; anything in use surfaces a friendly
+  // "deactivate instead" message (see friendlyDeleteErrorMessage).
+  const deleteItem = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('inventory_items').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['inventory-items'] }),
+  });
+
+  return { items, isLoading, createItem, updateItem, deleteItem };
 }

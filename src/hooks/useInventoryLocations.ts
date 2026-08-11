@@ -62,7 +62,19 @@ export function useInventoryLocations() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['inventory-locations'] }),
   });
 
-  return { locations, isLoading, createLocation, updateLocation };
+  // Hard delete — `inventory_locations.id` is `on delete restrict` from
+  // stock/transactions/purchases/sales/requests, so this only ever succeeds
+  // for a location with no activity yet; anything in use surfaces a
+  // friendly "deactivate instead" message (see friendlyDeleteErrorMessage).
+  const deleteLocation = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('inventory_locations').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['inventory-locations'] }),
+  });
+
+  return { locations, isLoading, createLocation, updateLocation, deleteLocation };
 }
 
 // Which guards currently hold Inventory access to which locations —
