@@ -45,8 +45,13 @@ source_conn=(-h "$SOURCE_DB_HOST" -p "$SOURCE_DB_PORT" -U "$SOURCE_DB_USER" -d p
 dest_conn=(-h "$DEST_DB_HOST" -p "$DEST_DB_PORT" -U "$DEST_DB_USER" -d postgres)
 
 echo "==> Dumping auth.users + auth.identities from source..."
+# No --disable-triggers here: Supabase's hosted "postgres" role doesn't own
+# auth.* tables (supabase_auth_admin does), so ALTER TABLE ... DISABLE
+# TRIGGER on them fails with "must be owner of table users". Not needed
+# anyway — there are no custom triggers on auth.users/auth.identities, and
+# users are dumped before identities so the FK is satisfied in order.
 PGPASSWORD="$SOURCE_DB_PASSWORD" pg_dump "${source_conn[@]}" \
-  --data-only --disable-triggers \
+  --data-only \
   --table=auth.users --table=auth.identities \
   -f "$WORKDIR/auth.sql"
 
