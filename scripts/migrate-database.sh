@@ -5,11 +5,17 @@
 # this script only copies rows into that already-created schema.
 #
 # Run this from a machine with normal internet access to both projects'
-# database hosts (db.<ref>.supabase.co:5432).
+# database hosts.
 #
-# Usage:
-#   SOURCE_DB_HOST=db.hsaqgpuvdbyrineknwzf.supabase.co SOURCE_DB_PASSWORD='...' \
-#   DEST_DB_HOST=db.tnckextopwhgjqysozoe.supabase.co   DEST_DB_PASSWORD='...' \
+# The direct host (db.<ref>.supabase.co) is IPv6-only — it won't connect
+# from networks without IPv6 (many CI/cloud/Codespaces environments,
+# notably). Use the session pooler host/user from each project's
+# Settings > Database > Connection string > "Session pooler" instead;
+# it works over IPv4. Its username is "postgres.<ref>", not just "postgres".
+#
+# Usage (pooler, typical):
+#   SOURCE_DB_HOST=aws-0-<region>.pooler.supabase.com SOURCE_DB_USER=postgres.hsaqgpuvdbyrineknwzf SOURCE_DB_PASSWORD='...' \
+#   DEST_DB_HOST=aws-0-<region>.pooler.supabase.com   DEST_DB_USER=postgres.tnckextopwhgjqysozoe   DEST_DB_PASSWORD='...' \
 #   ./scripts/migrate-database.sh
 #
 # Passwords are passed as separate variables (not a connection URL) so
@@ -23,18 +29,20 @@
 
 set -euo pipefail
 
-: "${SOURCE_DB_HOST:?Set SOURCE_DB_HOST (e.g. db.<old-ref>.supabase.co)}"
+: "${SOURCE_DB_HOST:?Set SOURCE_DB_HOST (e.g. db.<old-ref>.supabase.co, or the pooler host)}"
 : "${SOURCE_DB_PASSWORD:?Set SOURCE_DB_PASSWORD}"
-: "${DEST_DB_HOST:?Set DEST_DB_HOST (e.g. db.<new-ref>.supabase.co)}"
+: "${DEST_DB_HOST:?Set DEST_DB_HOST (e.g. db.<new-ref>.supabase.co, or the pooler host)}"
 : "${DEST_DB_PASSWORD:?Set DEST_DB_PASSWORD}"
 
 SOURCE_DB_PORT="${SOURCE_DB_PORT:-5432}"
 DEST_DB_PORT="${DEST_DB_PORT:-5432}"
+SOURCE_DB_USER="${SOURCE_DB_USER:-postgres}"
+DEST_DB_USER="${DEST_DB_USER:-postgres}"
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
-source_conn=(-h "$SOURCE_DB_HOST" -p "$SOURCE_DB_PORT" -U postgres -d postgres)
-dest_conn=(-h "$DEST_DB_HOST" -p "$DEST_DB_PORT" -U postgres -d postgres)
+source_conn=(-h "$SOURCE_DB_HOST" -p "$SOURCE_DB_PORT" -U "$SOURCE_DB_USER" -d postgres)
+dest_conn=(-h "$DEST_DB_HOST" -p "$DEST_DB_PORT" -U "$DEST_DB_USER" -d postgres)
 
 echo "==> Dumping auth.users + auth.identities from source..."
 PGPASSWORD="$SOURCE_DB_PASSWORD" pg_dump "${source_conn[@]}" \
