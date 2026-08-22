@@ -29,7 +29,12 @@
 #
 # Re-running: set SKIP_AUTH=1 to skip the auth.users/auth.identities step
 # (e.g. because a previous run already copied it — re-running it would
-# hit duplicate-key errors, since it's not upsert-safe).
+# hit duplicate-key errors, since it's not upsert-safe). If a previous run
+# of the public-schema restore failed partway through (each COPY commits
+# immediately, so a later failure doesn't roll back earlier tables), set
+# RESET_PUBLIC=1 to truncate every public table first so the retry starts
+# clean — this restore now runs as a single transaction, so that shouldn't
+# happen again going forward.
 
 set -euo pipefail
 
@@ -43,6 +48,7 @@ DEST_DB_PORT="${DEST_DB_PORT:-5432}"
 SOURCE_DB_USER="${SOURCE_DB_USER:-postgres}"
 DEST_DB_USER="${DEST_DB_USER:-postgres}"
 SKIP_AUTH="${SKIP_AUTH:-0}"
+RESET_PUBLIC="${RESET_PUBLIC:-0}"
 WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 
@@ -67,6 +73,14 @@ else
   echo "==> SKIP_AUTH=1 — skipping auth.users/auth.identities (assumed already migrated)."
 fi
 
+if [ "$RESET_PUBLIC" = "1" ]; then
+  echo "==> RESET_PUBLIC=1 — truncating destination public tables (except schema.sql-seeded reference tables)..."
+  table_list=$(PGPASSWORD="$DEST_DB_PASSWORD" psql "${dest_conn[@]}" -tAc \
+    "select string_agg(quote_ident(tablename), ', ') from pg_tables where schemaname = 'public' and tablename not in ('inventory_categories', 'inventory_units')")
+  PGPASSWORD="$DEST_DB_PASSWORD" psql "${dest_conn[@]}" -v ON_ERROR_STOP=1 \
+    -c "truncate table $table_list restart identity cascade;"
+fi
+
 echo "==> Dumping public schema data from source..."
 # No --disable-triggers here either: disabling the FK-check triggers Postgres
 # generates for referential integrity ("RI_ConstraintTrigger_...") requires
@@ -75,13 +89,19 @@ echo "==> Dumping public schema data from source..."
 # skips both those and any custom triggers for the duration of the session
 # without needing special per-table permissions — this also resolves the
 # circular-FK warnings pg_dump prints (inventory_locations, task_messages).
+#
+# inventory_categories/inventory_units are excluded: schema.sql seeds those
+# itself with the app's fixed reference lists, so the destination already
+# has them and re-inserting the source's rows just collides on name.
 PGPASSWORD="$SOURCE_DB_PASSWORD" pg_dump "${source_conn[@]}" \
   --data-only \
   --schema=public \
+  --exclude-table=public.inventory_categories \
+  --exclude-table=public.inventory_units \
   -f "$WORKDIR/public.sql"
 
-echo "==> Restoring public schema data into destination..."
-PGPASSWORD="$DEST_DB_PASSWORD" psql "${dest_conn[@]}" -v ON_ERROR_STOP=1 <<SQL
+echo "==> Restoring public schema data into destination (single transaction — all or nothing)..."
+PGPASSWORD="$DEST_DB_PASSWORD" psql "${dest_conn[@]}" --single-transaction -v ON_ERROR_STOP=1 <<SQL
 SET session_replication_role = replica;
 \i $WORKDIR/public.sql
 SET session_replication_role = DEFAULT;
@@ -90,3 +110,7 @@ SQL
 echo
 echo "Done. Spot-check row counts (e.g. select count(*) from profiles;) on both"
 echo "projects, then run scripts/migrate-storage.mjs to copy the actual files."
+echo
+echo "Note: inventory_categories/inventory_units were NOT copied — if the"
+echo "source project has custom categories/units beyond schema.sql's default"
+echo "list, add those manually."
