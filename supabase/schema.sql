@@ -662,7 +662,7 @@ begin
 
   begin
     perform net.http_post(
-      url := 'https://hsaqgpuvdbyrineknwzf.supabase.co/functions/v1/send-push',
+      url := 'https://tnckextopwhgjqysozoe.supabase.co/functions/v1/send-push',
       headers := jsonb_build_object(
         'Content-Type', 'application/json',
         'x-webhook-secret', secret
