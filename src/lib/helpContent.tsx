@@ -6,7 +6,7 @@ import { Rocket, ClipboardList, AlertTriangle, WifiOff, Keyboard, MessageCircleQ
 // (MobileHelpSheet.tsx) — so the two surfaces never drift out of sync.
 
 export const SUPPORT_EMAIL = 'tigercell.ptr@jharkhand.gov.in';
-export const SUPPORT_MAILTO = `mailto:${SUPPORT_EMAIL}?subject=PTR%20Field%20Operations%20—%20Support`;
+export const SUPPORT_MAILTO = `mailto:${SUPPORT_EMAIL}?subject=Smart%20Forester%20—%20Support`;
 
 export type HelpTopic = {
   id: string;
@@ -95,7 +95,7 @@ export const HELP_TOPICS: HelpTopic[] = [
 
 export const HELP_ABOUT_BODY = (
   <>
-    <p className="font-semibold text-n-100">Palamau Tiger Reserve — Field Operations Management System</p>
+    <p className="font-semibold text-n-100">Palamau Tiger Reserve — Smart Forester</p>
     <p>Used by field staff, range officers, Tiger Cell and the Directorate to track patrol and maintenance tasks, and to report and manage human–wildlife conflict incidents across the reserve.</p>
     <p>Government of Jharkhand.</p>
   </>

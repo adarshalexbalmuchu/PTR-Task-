@@ -222,7 +222,7 @@ function ShellContent({ base, role }: { base: string; role: string }) {
         <img src={jharkhandEmblem} alt="" className="w-7 h-7 flex-shrink-0" />
         <div className="leading-tight min-w-0 flex-1">
           <div className="text-[10px] text-white/70 uppercase tracking-wide leading-none truncate">Government of Jharkhand</div>
-          <div className="text-[15px] font-semibold leading-tight truncate">Field Operations</div>
+          <div className="text-[15px] font-semibold leading-tight truncate">Smart Forester</div>
         </div>
         <SyncPill onOpen={(trigger) => { syncPillRef.current = trigger; overlay?.open('sync-details', trigger); }} />
         <button

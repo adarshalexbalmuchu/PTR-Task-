@@ -102,9 +102,7 @@ export default function Login() {
               Palamau Tiger Reserve
             </div>
             <h1 className="text-2xl xl:text-[1.75rem] font-bold tracking-tight leading-snug mt-1.5">
-              Field Operations
-              <br />
-              Management System
+              Smart Forester
             </h1>
 
             <div className="border-t border-white/10 mt-6 mb-5 w-14" />

@@ -84,7 +84,7 @@ self.addEventListener('push', (event) => {
     }
   }
 
-  const title = payload.title ?? 'PTR Tiger Cell';
+  const title = payload.title ?? 'Smart Forester';
   const url = sanitizeNotificationUrl(payload.url);
   // Critical/High priority tasks (and changes-requested / overdue reminders,
   // which always need action) get a stronger vibration and stay on screen
