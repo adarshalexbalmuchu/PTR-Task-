@@ -40,7 +40,15 @@ export default function Login() {
         setLoading(false);
       }, 500);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Invalid email or password.');
+      const status = (err as { status?: number } | null)?.status;
+      if (status === 402) {
+        // The Supabase project itself is billing-restricted (e.g. egress
+        // quota exceeded), not a bad login. Its error body is internal
+        // infra detail — don't show it verbatim to end users.
+        setError('Login is temporarily unavailable. Please contact your system administrator.');
+      } else {
+        setError(err instanceof Error ? err.message : 'Invalid email or password.');
+      }
       setLoading(false);
     }
   };
