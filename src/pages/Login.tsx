@@ -40,7 +40,15 @@ export default function Login() {
         setLoading(false);
       }, 500);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Invalid email or password.');
+      const status = (err as { status?: number } | null)?.status;
+      if (status === 402) {
+        // The Supabase project itself is billing-restricted (e.g. egress
+        // quota exceeded), not a bad login. Its error body is internal
+        // infra detail — don't show it verbatim to end users.
+        setError('Login is temporarily unavailable. Please contact your system administrator.');
+      } else {
+        setError(err instanceof Error ? err.message : 'Invalid email or password.');
+      }
       setLoading(false);
     }
   };
@@ -94,9 +102,7 @@ export default function Login() {
               Palamau Tiger Reserve
             </div>
             <h1 className="text-2xl xl:text-[1.75rem] font-bold tracking-tight leading-snug mt-1.5">
-              Field Operations
-              <br />
-              Management System
+              Smart Forester
             </h1>
 
             <div className="border-t border-white/10 mt-6 mb-5 w-14" />

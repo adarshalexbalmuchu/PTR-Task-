@@ -35,7 +35,7 @@ export default function GovHeader({ compact = false }: Props) {
             Palamau Tiger Reserve
           </h1>
           <p className={`text-ptr-brown-light font-medium ${compact ? 'text-xs' : 'text-xs md:text-sm'}`}>
-            Field Operations Management System
+            Smart Forester
           </p>
         </div>
       </div>

@@ -1,10 +1,10 @@
-# Palamau Tiger Reserve — Task Management System
+# Smart Forester
 
-A field task management app for PTR — task assignment and closed-loop tracking,
-incident reporting with geotagged photos, patrol map, audit log, and web push
-notifications. Backed by Supabase (Postgres + Auth + Storage + Realtime + Edge
-Functions) with row-level security enforcing director / range-officer / guard
-visibility server-side.
+A field task management app for Palamau Tiger Reserve — task assignment and
+closed-loop tracking, incident reporting with geotagged photos, patrol map,
+audit log, and web push notifications. Backed by Supabase (Postgres + Auth +
+Storage + Realtime + Edge Functions) with row-level security enforcing
+director / range-officer / guard visibility server-side.
 
 ## Quick Start
 

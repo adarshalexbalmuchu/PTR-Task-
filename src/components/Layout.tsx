@@ -213,9 +213,9 @@ function GlobalHeader({
           <div className="text-[10.5px] text-white/70 tracking-wide uppercase leading-none">Government of Jharkhand</div>
           <div className="text-13 font-semibold text-white leading-tight truncate">Palamau Tiger Reserve</div>
         </div>
-        <span className="text-13 font-semibold text-white xs:hidden">PTR</span>
+        <span className="text-13 font-semibold text-white xs:hidden">Smart Forester</span>
         <span className="hidden lg:block text-xs text-white/60 border-l border-white/20 pl-2.5 ml-1 truncate">
-          Field Operations
+          Smart Forester
         </span>
       </div>
 
