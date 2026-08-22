@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Copy auth users + all public-schema data from one Supabase project's
+# database to another. Run supabase/schema.sql against the DESTINATION
+# project FIRST (it creates tables, storage buckets, and RLS policies) —
+# this script only copies rows into that already-created schema.
+#
+# Run this from a machine with normal internet access to both projects'
+# database hosts (db.<ref>.supabase.co:5432).
+#
+# Usage:
+#   SOURCE_DB_HOST=db.hsaqgpuvdbyrineknwzf.supabase.co SOURCE_DB_PASSWORD='...' \
+#   DEST_DB_HOST=db.tnckextopwhgjqysozoe.supabase.co   DEST_DB_PASSWORD='...' \
+#   ./scripts/migrate-database.sh
+#
+# Passwords are passed as separate variables (not a connection URL) so
+# special characters like "@" in them don't need URL-encoding.
+#
+# What this does NOT do:
+# - auth.sessions / auth.refresh_tokens are intentionally skipped — stale
+#   sessions aren't useful; everyone just signs in fresh on the new project.
+# - Storage files (photos/attachments) aren't touched — run
+#   scripts/migrate-storage.mjs separately for those.
+
+set -euo pipefail
+
+: "${SOURCE_DB_HOST:?Set SOURCE_DB_HOST (e.g. db.<old-ref>.supabase.co)}"
+: "${SOURCE_DB_PASSWORD:?Set SOURCE_DB_PASSWORD}"
+: "${DEST_DB_HOST:?Set DEST_DB_HOST (e.g. db.<new-ref>.supabase.co)}"
+: "${DEST_DB_PASSWORD:?Set DEST_DB_PASSWORD}"
+
+SOURCE_DB_PORT="${SOURCE_DB_PORT:-5432}"
+DEST_DB_PORT="${DEST_DB_PORT:-5432}"
+WORKDIR="$(mktemp -d)"
+trap 'rm -rf "$WORKDIR"' EXIT
+
+source_conn=(-h "$SOURCE_DB_HOST" -p "$SOURCE_DB_PORT" -U postgres -d postgres)
+dest_conn=(-h "$DEST_DB_HOST" -p "$DEST_DB_PORT" -U postgres -d postgres)
+
+echo "==> Dumping auth.users + auth.identities from source..."
+PGPASSWORD="$SOURCE_DB_PASSWORD" pg_dump "${source_conn[@]}" \
+  --data-only --disable-triggers \
+  --table=auth.users --table=auth.identities \
+  -f "$WORKDIR/auth.sql"
+
+echo "==> Dumping public schema data from source..."
+PGPASSWORD="$SOURCE_DB_PASSWORD" pg_dump "${source_conn[@]}" \
+  --data-only --disable-triggers \
+  --schema=public \
+  -f "$WORKDIR/public.sql"
+
+echo "==> Restoring auth data into destination (profiles.id references auth.users.id, so this must go first)..."
+PGPASSWORD="$DEST_DB_PASSWORD" psql "${dest_conn[@]}" -v ON_ERROR_STOP=1 -f "$WORKDIR/auth.sql"
+
+echo "==> Restoring public schema data into destination..."
+PGPASSWORD="$DEST_DB_PASSWORD" psql "${dest_conn[@]}" -v ON_ERROR_STOP=1 -f "$WORKDIR/public.sql"
+
+echo
+echo "Done. Spot-check row counts (e.g. select count(*) from profiles;) on both"
+echo "projects, then run scripts/migrate-storage.mjs to copy the actual files."
