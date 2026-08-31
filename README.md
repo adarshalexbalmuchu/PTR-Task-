@@ -102,11 +102,11 @@ server-side, so stray whitespace from dashboard pasting can't corrupt them.
 After changing `VITE_VAPID_PUBLIC_KEY`, redeploy the frontend (the key is baked
 in at build time) and re-enable notifications on each device.
 
-To verify the whole path end to end, use **Profile → Notifications → Send test
-notification** in the app: it fires a real push through the Edge Function to
-your own devices and reports per-device delivery — including whether the
-configured VAPID public/private keys are actually a matching pair (the
-function derives one from the other and compares).
+To verify the whole path end to end, assign a task to a test user and confirm
+the notification arrives on their device. `send-push` logs each delivery
+failure (with status code and endpoint) to its function logs, and pg_net
+records every response in `net._http_response` — a `403 invalid JWT` there
+means the subscription's key and the server's signing key don't match.
 
 ## Tech Stack
 
