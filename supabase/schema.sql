@@ -3551,6 +3551,12 @@ grant execute on function create_group_occurrence(uuid, text, text, task_categor
 -- and its "<entity-id>/<file>" folder convention — objects for a message
 -- live under "<conversation-id>/<uuid>-<filename>".
 -- ─────────────────────────────────────────────
+-- storage.objects policies aren't covered by the public-schema policy DROP
+-- loop earlier in this file, so they need explicit drops to stay idempotent
+-- (a bare create fails with 42710 on re-run).
+drop policy if exists "task_conversation_attachments_upload" on storage.objects;
+drop policy if exists "task_conversation_attachments_download" on storage.objects;
+
 create policy "task_conversation_attachments_upload" on storage.objects
   for insert with check (
     bucket_id = 'task-attachments'
