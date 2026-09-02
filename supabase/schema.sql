@@ -342,9 +342,15 @@ alter table incidents add column if not exists resolved_at timestamptz;
 alter table notifications add column if not exists incident_id uuid references incidents(id) on delete cascade;
 create index if not exists notifications_incident_id_idx on notifications(incident_id) where incident_id is not null;
 
+-- NOT VALID: this is an intermediate form of the constraint that the schema
+-- widens twice below (to three, then five allowed targets). Validating it
+-- here would abort the whole script on any pre-existing series/occurrence/
+-- inventory notification — rows the final constraint accepts — so it is
+-- added unvalidated and enforced only for new writes; the authoritative
+-- five-target constraint at the end is the one validated against all rows.
 do $$ begin
   alter table notifications add constraint notifications_task_or_incident_chk
-    check ((task_id is not null) <> (incident_id is not null));
+    check ((task_id is not null) <> (incident_id is not null)) not valid;
 exception when duplicate_object then null; end $$;
 
 -- Photos attached to an incident report. Compressed client-side before
@@ -1758,13 +1764,17 @@ create index if not exists notifications_inventory_request_id_idx on notificatio
 
 -- Widen the "exactly one of these is set" check from two columns to three
 -- (sum-of-booleans, since <> only expresses XOR for exactly two operands).
+-- NOT VALID for the same reason as the two-column form above: the schema
+-- widens this once more (to five targets) below, and validating the
+-- three-target form here would reject pre-existing series/occurrence
+-- notifications that the final constraint accepts.
 alter table notifications drop constraint if exists notifications_task_or_incident_chk;
 alter table notifications add constraint notifications_task_or_incident_chk
   check (
     (case when task_id is not null then 1 else 0 end)
     + (case when incident_id is not null then 1 else 0 end)
     + (case when inventory_request_id is not null then 1 else 0 end) = 1
-  );
+  ) not valid;
 
 -- audit_log stays task-shaped by name but gains nullable inventory columns
 -- (Director explicitly wanted one unified audit timeline rather than a
