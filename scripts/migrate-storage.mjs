@@ -40,19 +40,32 @@ const dest = createClient(DEST_URL, DEST_KEY, clientOpts);
 
 // Buckets are used as <id>/<filename> — one folder level — but list
 // recursively anyway so nothing is missed if that ever changes.
+//
+// Pages through each prefix with limit+offset: a single list() call returns
+// at most `PAGE` entries, so a bucket/folder with more than that would
+// otherwise be silently truncated — a migration that looks complete but
+// quietly drops files. A stable sort is required for offset paging to be
+// consistent across calls.
+const PAGE = 100;
 async function listAllPaths(client, bucket, prefix = '') {
-  const { data: entries, error } = await client.storage.from(bucket).list(prefix, { limit: 1000 });
-  if (error) throw new Error(`list ${bucket}/${prefix} failed: ${error.message}`);
-
   const paths = [];
-  for (const entry of entries ?? []) {
-    const fullPath = prefix ? `${prefix}/${entry.name}` : entry.name;
-    // A storage "folder" has no id and no metadata; a real object does.
-    if (entry.id === null) {
-      paths.push(...await listAllPaths(client, bucket, fullPath));
-    } else {
-      paths.push(fullPath);
+  for (let offset = 0; ; offset += PAGE) {
+    const { data: entries, error } = await client.storage
+      .from(bucket)
+      .list(prefix, { limit: PAGE, offset, sortBy: { column: 'name', order: 'asc' } });
+    if (error) throw new Error(`list ${bucket}/${prefix} failed: ${error.message}`);
+
+    for (const entry of entries ?? []) {
+      const fullPath = prefix ? `${prefix}/${entry.name}` : entry.name;
+      // A storage "folder" has no id and no metadata; a real object does.
+      if (entry.id === null) {
+        paths.push(...await listAllPaths(client, bucket, fullPath));
+      } else {
+        paths.push(fullPath);
+      }
     }
+
+    if (!entries || entries.length < PAGE) break;
   }
   return paths;
 }
