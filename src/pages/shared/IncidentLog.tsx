@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, type ChangeEvent, type FormEvent } from '
 import { useSearchParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import {
-  AlertTriangle, Plus, X, MapPin, Trash2, Camera, ImagePlus, ClipboardPlus, Search,
+  AlertTriangle, Plus, X, MapPin, Trash2, Camera, ImagePlus, FolderOpen, ClipboardPlus, Search,
   Filter, RefreshCw, Download, MoreHorizontal, ChevronDown, UserCog, CircleDashed, CheckCircle2, RotateCcw,
 } from 'lucide-react';
 import useStore from '../../store/useStore';
@@ -105,8 +105,20 @@ function ReportForm({
 
   const addPhotos = (e: ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      const incoming = Array.from(e.target.files);
-      setPhotos((prev) => [...prev, ...incoming].slice(0, MAX_INCIDENT_PHOTOS));
+      const picked = Array.from(e.target.files);
+      // The "Files" picker can reach any document in storage, so reject
+      // anything that isn't an image before it hits the JPEG compression
+      // pipeline (some file managers report an empty MIME type, so fall
+      // back to matching the extension).
+      const isImage = (f: File) =>
+        f.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|heic|heif|bmp|tiff?)$/i.test(f.name);
+      const incoming = picked.filter(isImage);
+      if (incoming.length < picked.length) {
+        setError('Only image files can be attached to a report.');
+      }
+      if (incoming.length > 0) {
+        setPhotos((prev) => [...prev, ...incoming].slice(0, MAX_INCIDENT_PHOTOS));
+      }
       e.target.value = '';
     }
   };
@@ -257,16 +269,31 @@ function ReportForm({
               </div>
             )}
             {photos.length < MAX_INCIDENT_PHOTOS && (
-              <div className="flex gap-2">
-                <label className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2.5 bg-white border border-ptr-cream-dark rounded-xl text-sm text-ptr-brown-light hover:bg-ptr-cream cursor-pointer transition-colors min-h-[44px]">
+              <div className="flex flex-wrap gap-2">
+                <label className="flex-1 min-w-[100px] inline-flex items-center justify-center gap-2 px-3 py-2.5 bg-white border border-ptr-cream-dark rounded-xl text-sm text-ptr-brown-light hover:bg-ptr-cream cursor-pointer transition-colors min-h-[44px]">
                   <Camera className="w-4 h-4" />
                   <span>Take Photo</span>
                   <input type="file" accept="image/*" capture="environment" className="sr-only" onChange={addPhotos} />
                 </label>
-                <label className="flex-1 inline-flex items-center justify-center gap-2 px-3 py-2.5 bg-white border border-ptr-cream-dark rounded-xl text-sm text-ptr-brown-light hover:bg-ptr-cream cursor-pointer transition-colors min-h-[44px]">
+                <label className="flex-1 min-w-[100px] inline-flex items-center justify-center gap-2 px-3 py-2.5 bg-white border border-ptr-cream-dark rounded-xl text-sm text-ptr-brown-light hover:bg-ptr-cream cursor-pointer transition-colors min-h-[44px]">
                   <ImagePlus className="w-4 h-4" />
                   <span>Gallery</span>
                   <input type="file" accept="image/*" multiple className="sr-only" onChange={addPhotos} />
+                </label>
+                {/* Extension-based accept (not image/*) so the OS opens the
+                    file-manager / documents picker — lets the reporter attach
+                    an image saved in Downloads, Drive, WhatsApp, etc., not
+                    just the photo gallery. */}
+                <label className="flex-1 min-w-[100px] inline-flex items-center justify-center gap-2 px-3 py-2.5 bg-white border border-ptr-cream-dark rounded-xl text-sm text-ptr-brown-light hover:bg-ptr-cream cursor-pointer transition-colors min-h-[44px]">
+                  <FolderOpen className="w-4 h-4" />
+                  <span>Files</span>
+                  <input
+                    type="file"
+                    accept=".jpg,.jpeg,.png,.webp,.gif,.heic,.heif,.bmp,.tif,.tiff"
+                    multiple
+                    className="sr-only"
+                    onChange={addPhotos}
+                  />
                 </label>
               </div>
             )}
